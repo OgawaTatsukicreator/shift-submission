@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>月間シフト提出</title>
+    <link rel="stylesheet" href="./styles.css?v=material-20260617" />
+  </head>
+  <body>
+    <main class="phone-shell">
+      <header class="app-header">
+        <div class="logo">ZEN</div>
+        <div>
+          <p>株式会社zen従業員</p>
+          <h1>月間シフト提出</h1>
+        </div>
+        <span class="menu-dot" aria-hidden="true">≡</span>
+      </header>
+
+      <form id="shiftForm" autocomplete="on">
+        <section class="deadline-bar">
+          <strong>提出期限：毎月15日</strong>
+          <span id="connectionStatus">未接続</span>
+        </section>
+
+        <section class="staff-panel" aria-label="提出者情報">
+          <label>
+            名前
+            <select name="name" required>
+              <option value="">名前を選択</option>
+              <option value="笠原">笠原</option>
+              <option value="比嘉">比嘉</option>
+              <option value="須藤">須藤</option>
+              <option value="福岡">福岡</option>
+              <option value="生江">生江</option>
+              <option value="松田">松田</option>
+              <option value="加藤慎也">加藤慎也</option>
+              <option value="中澤">中澤</option>
+              <option value="西久保">西久保</option>
+              <option value="加藤はるか">加藤はるか</option>
+              <option value="堤">堤</option>
+              <option value="内田">内田</option>
+              <option value="熊谷">熊谷</option>
+              <option value="室山">室山</option>
+              <option value="坂田">坂田</option>
+              <option value="大川">大川</option>
+              <option value="小川">小川</option>
+              <option value="橋本">橋本</option>
+              <option value="穂積">穂積</option>
+              <option value="石渡">石渡</option>
+              <option value="田中">田中</option>
+              <option value="森脇">森脇</option>
+              <option value="濱本">濱本</option>
+              <option value="太田">太田</option>
+              <option value="和田">和田</option>
+              <option value="安田">安田</option>
+              <option value="高井">高井</option>
+              <option value="迎">迎</option>
+              <option value="奥寺">奥寺</option>
+              <option value="新井">新井</option>
+            </select>
+          </label>
+          <label>
+            店舗名
+            <select name="contact" required>
+              <option value="">店舗を選択</option>
+              <option value="大山">大山</option>
+              <option value="八王">八王子</option>
+              <option value="成増">成増</option>
+              <option value="板橋">板橋</option>
+              <option value="赤塚">赤塚</option>
+              <option value="池袋">池袋</option>
+              <option value="葛西">葛西</option>
+              <option value="西八">西八王子</option>
+              <option value="みなみ">八王子みなみ野</option>
+            </select>
+          </label>
+          <label>
+            対象月
+            <input name="month" type="month" required />
+          </label>
+        </section>
+
+        <section class="month-nav" aria-label="対象月操作">
+          <button type="button" class="nav-button" id="prevMonth" aria-label="前月">‹</button>
+          <div>
+            <strong id="monthTitle"></strong>
+            <small id="monthRange"></small>
+          </div>
+          <button type="button" class="nav-button" id="nextMonth" aria-label="翌月">›</button>
+        </section>
+
+        <section class="tools" aria-label="一括入力">
+          <button type="button" data-fill="work">全日 11:00-20:00</button>
+          <button type="button" data-fill="holiday">全日 公休</button>
+          <button type="button" data-fill="clear">未申請に戻す</button>
+        </section>
+
+        <section class="calendar-panel" aria-labelledby="calendarTitle">
+          <div class="page-label" id="calendarTitle">1か月分をまとめて入力</div>
+          <div class="calendar-grid" id="calendarGrid"></div>
+        </section>
+
+        <section class="notes-panel">
+          <label>
+            備考
+            <textarea name="notes" rows="3" placeholder="固定休、早上がり、相談したい日など"></textarea>
+          </label>
+        </section>
+
+        <p class="message" id="message" role="status"></p>
+
+        <footer class="bottom-actions">
+          <button class="alert" type="button" id="loadMine">前回内容</button>
+          <button class="primary" type="submit">申請する</button>
+          <button class="secondary" type="reset">クリア</button>
+        </footer>
+      </form>
+    </main>
+
+    <div class="toast-modal" id="toastModal" role="status" aria-live="polite">
+      <div class="toast-card">
+        <div class="toast-icon">✓</div>
+        <strong id="toastTitle">申請しました</strong>
+        <p id="toastText">シフト希望を保存しました。</p>
+      </div>
+    </div>
+
+    <template id="dayTemplate">
+      <article class="day-card">
+        <div class="date-badge">
+          <small></small>
+          <strong></strong>
+          <span></span>
+        </div>
+        <div class="day-fields">
+          <select name="type" aria-label="区分">
+            <option value="未申請">未選択</option>
+            <option value="勤務">勤務</option>
+            <option value="公休">公休</option>
+            <option value="有給">有給</option>
+            <option value="PT">PT</option>
+          </select>
+          <input name="start" type="hidden">
+          <input name="end" type="hidden">
+          <div class="selected-time"></div>
+        </div>
+      </article>
+    </template>
+
+    <div class="time-modal" id="timeModal" role="dialog" aria-modal="true" aria-labelledby="timeModalTitle">
+      <div class="time-card">
+        <h2 id="timeModalTitle">時間を選択</h2>
+        <div class="time-modal-grid">
+          <label>
+            開始
+            <select id="modalStart"></select>
+          </label>
+          <label>
+            終了
+            <select id="modalEnd"></select>
+          </label>
+        </div>
+        <div class="time-modal-actions">
+          <button class="secondary" type="button" id="cancelTime">戻る</button>
+          <button class="primary" type="button" id="applyTime">決定</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

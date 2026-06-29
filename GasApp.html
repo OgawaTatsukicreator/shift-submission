@@ -1,0 +1,1152 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>月間シフト提出</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --primary: #2e7d32;
+        --primary-dark: #1b5e20;
+        --primary-soft: #e8f5e9;
+        --surface: #ffffff;
+        --surface-2: #f7f9fb;
+        --background: #eef2f6;
+        --outline: #d8dee7;
+        --text: #17202a;
+        --muted: #6b7280;
+        --danger: #d32f2f;
+        --saturday: #1976d2;
+        --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.12), 0 1px 3px rgba(16, 24, 40, 0.1);
+        --shadow-2: 0 6px 16px rgba(16, 24, 40, 0.14);
+        --radius: 12px;
+        font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        background: linear-gradient(180deg, rgba(46, 125, 50, 0.12), transparent 220px), var(--background);
+      }
+
+      button, input, select, textarea { font: inherit; }
+
+      .phone-shell {
+        width: 100%;
+        max-width: 100%;
+        min-height: 100vh;
+        margin: 0 auto;
+        background: var(--background);
+        box-shadow: 0 24px 70px rgba(16, 24, 40, 0.18);
+      }
+
+      img {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      .app-header {
+        min-height: 72px;
+        display: grid;
+        grid-template-columns: 82px 1fr 56px;
+        align-items: center;
+        padding: 8px 0;
+        color: #fff;
+        background: var(--primary);
+        box-shadow: var(--shadow-2);
+        text-align: center;
+      }
+
+      .logo {
+        width: 52px;
+        height: 38px;
+        margin: 0 auto;
+        display: grid;
+        place-items: center;
+        color: var(--primary);
+        background: #fff;
+        border-radius: 10px;
+        font-size: 1.14rem;
+        font-weight: 900;
+        box-shadow: var(--shadow-1);
+      }
+
+      .app-header p, .app-header h1 {
+        margin: 0;
+        line-height: 1.25;
+      }
+
+      .app-header p {
+        color: rgba(255, 255, 255, 0.86);
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+
+      .app-header h1 {
+        color: #fff;
+        font-size: 1.12rem;
+        font-weight: 800;
+      }
+
+      .menu-dot {
+        width: 36px;
+        height: 36px;
+        display: inline-grid;
+        place-items: center;
+        margin: 0 auto;
+        color: #fff;
+        background: rgba(255, 255, 255, 0.16);
+        border-radius: 999px;
+        font-size: 1.35rem;
+        font-weight: 700;
+      }
+
+      .deadline-bar, .staff-panel, .notes-panel, .month-nav, .day-card {
+        background: var(--surface);
+        box-shadow: var(--shadow-1);
+      }
+
+      .deadline-bar {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        min-height: 44px;
+        margin: 12px 12px 0;
+        padding: 0 14px;
+        border-radius: var(--radius);
+      }
+
+      .deadline-bar strong {
+        color: var(--danger);
+        font-weight: 800;
+      }
+
+      #connectionStatus {
+        min-height: 26px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0 9px;
+        color: var(--muted);
+        background: #f3f4f6;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .staff-panel, .notes-panel {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+        margin: 12px;
+        padding: 14px;
+        border-radius: var(--radius);
+      }
+
+      .staff-panel { grid-template-columns: 1fr 1fr; }
+      .staff-panel label:last-child { grid-column: 1 / -1; }
+
+      label {
+        display: grid;
+        gap: 6px;
+        color: #374151;
+        font-size: 0.82rem;
+        font-weight: 800;
+      }
+
+      input, select, textarea {
+        width: 100%;
+        min-height: 58px;
+        border: 1px solid var(--outline);
+        border-radius: 10px;
+        padding: 9px 12px;
+        background: #fff;
+        color: var(--text);
+        outline: none;
+      }
+
+      textarea { resize: vertical; }
+
+      input:focus, select:focus, textarea:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 4px rgba(46, 125, 50, 0.14);
+      }
+
+      .month-nav {
+        min-height: 58px;
+        margin: 12px;
+        display: grid;
+        grid-template-columns: 44px 1fr 44px;
+        align-items: center;
+        gap: 10px;
+        padding: 7px;
+        border-radius: 16px;
+        text-align: center;
+      }
+
+      .month-nav strong, .month-nav small {
+        display: block;
+        line-height: 1.35;
+      }
+
+      .month-nav small {
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .nav-button {
+        width: 54px;
+        height: 54px;
+        border: 0;
+        border-radius: 999px;
+        color: #fff;
+        background: var(--primary);
+        box-shadow: var(--shadow-1);
+        font-size: 1.7rem;
+        font-weight: 800;
+        line-height: 1;
+      }
+
+      .tools {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        padding: 0 12px 12px;
+      }
+
+      .tools button {
+        min-height: 60px;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--primary);
+        box-shadow: var(--shadow-1);
+        font-size: 0.76rem;
+        font-weight: 800;
+      }
+
+      .tools button:first-child {
+        color: #fff;
+        background: var(--primary);
+      }
+
+      .calendar-panel { padding: 0 12px 96px; }
+
+      .page-label {
+        padding: 4px 0 10px;
+        color: var(--muted);
+        text-align: center;
+        font-weight: 800;
+      }
+
+      .calendar-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .day-card {
+        min-width: 0;
+        display: grid;
+        grid-template-columns: 58px 1fr;
+        gap: 8px;
+        align-items: stretch;
+        padding: 8px;
+        border-radius: 14px;
+      }
+
+      .date-badge {
+        min-height: 82px;
+        display: grid;
+        place-items: center;
+        padding: 5px;
+        color: #fff;
+        background: var(--primary);
+        border-radius: 12px;
+        text-align: center;
+        line-height: 1.05;
+      }
+
+      .date-badge small, .date-badge span {
+        font-size: 0.72rem;
+        font-weight: 800;
+      }
+
+      .date-badge strong {
+        font-size: 1.5rem;
+        font-weight: 900;
+      }
+
+      .day-card.sunday .date-badge { background: var(--danger); }
+      .day-card.saturday .date-badge { background: var(--saturday); }
+      .day-card.holiday .date-badge { color: #4b5563; background: #e5e7eb; }
+
+      .day-fields {
+        min-width: 0;
+        min-height: 82px;
+        display: grid;
+        gap: 6px;
+        align-content: center;
+      }
+
+      .day-fields select {
+        min-height: 58px;
+        padding: 5px 8px;
+        border-radius: 9px;
+        font-weight: 800;
+        font-size: 0.98rem;
+      }
+
+      .time-row {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .time-row.is-hidden {
+        display: none;
+      }
+
+      .time-row input, .time-row select {
+        min-width: 0;
+        min-height: 38px;
+        padding: 3px 5px;
+        border-radius: 9px;
+        font-size: 0.77rem;
+      }
+
+      .time-row span {
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 800;
+      }
+
+      .day-card.off { background: var(--surface-2); }
+
+      .message {
+        min-height: 28px;
+        margin: 0;
+        padding: 0 14px 12px;
+        color: var(--muted);
+        font-weight: 800;
+      }
+
+      .message.error { color: var(--danger); }
+      .message.success { color: var(--primary-dark); }
+
+      .toast-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        display: none;
+        place-items: center;
+        padding: 24px;
+        background: rgba(17, 24, 39, 0.42);
+      }
+
+      .toast-modal.is-open {
+        display: grid;
+      }
+
+      .toast-card {
+        width: min(88vw, 360px);
+        padding: 28px 22px;
+        color: #17202a;
+        background: #fff;
+        border-radius: 22px;
+        box-shadow: 0 24px 70px rgba(16, 24, 40, 0.28);
+        text-align: center;
+      }
+
+      .toast-icon {
+        width: 58px;
+        height: 58px;
+        display: grid;
+        place-items: center;
+        margin: 0 auto 14px;
+        color: #fff;
+        background: var(--primary);
+        border-radius: 999px;
+        font-size: 1.8rem;
+        font-weight: 900;
+      }
+
+      .toast-card strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 1.15rem;
+      }
+
+      .toast-card p {
+        margin: 0;
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .selected-time {
+        min-height: 30px;
+        display: grid;
+        place-items: center;
+        color: var(--primary-dark);
+        font-size: 0.9rem;
+        font-weight: 900;
+      }
+
+      .time-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        display: none;
+        place-items: center;
+        padding: 24px;
+        background: rgba(17, 24, 39, 0.48);
+      }
+
+      .time-modal.is-open {
+        display: grid;
+      }
+
+      .time-card {
+        width: min(92vw, 420px);
+        padding: 22px;
+        background: #fff;
+        border-radius: 22px;
+        box-shadow: 0 24px 70px rgba(16, 24, 40, 0.3);
+      }
+
+      .time-card h2 {
+        margin: 0 0 16px;
+        font-size: 1.18rem;
+      }
+
+      .time-modal-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .time-modal-grid label {
+        display: grid;
+        gap: 8px;
+        font-weight: 900;
+      }
+
+      .time-modal-grid select {
+        min-height: 72px;
+        font-size: 1.18rem;
+        font-weight: 900;
+      }
+
+      .time-modal-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .time-modal-actions button {
+        min-height: 58px;
+        border: 0;
+        border-radius: 999px;
+        font-weight: 900;
+      }
+
+      .bottom-actions {
+        position: sticky;
+        bottom: 0;
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 8px;
+        padding: 10px 12px;
+        background: rgba(255, 255, 255, 0.92);
+        border-top: 1px solid rgba(216, 222, 231, 0.9);
+        box-shadow: 0 -8px 22px rgba(16, 24, 40, 0.14);
+      }
+
+      .bottom-actions button {
+        min-height: 74px;
+        border: 0;
+        border-radius: 999px;
+        font-weight: 900;
+      }
+
+      .alert { color: var(--primary); background: var(--primary-soft); }
+      .primary { color: #fff; background: var(--primary); }
+      .secondary { color: #4b5563; background: #e5e7eb; }
+
+      @media (max-width: 430px) {
+        .phone-shell { box-shadow: none; }
+        .app-header {
+          min-height: 64px;
+          grid-template-columns: 68px 1fr 48px;
+        }
+        .logo {
+          width: 44px;
+          height: 32px;
+          font-size: 1rem;
+        }
+        .deadline-bar, .staff-panel, .notes-panel, .month-nav {
+          margin-inline: 8px;
+        }
+        .staff-panel, .notes-panel {
+          padding: 10px;
+        }
+        .staff-panel { grid-template-columns: 1fr; }
+        .tools {
+          gap: 5px;
+          padding-inline: 8px;
+        }
+        .tools button {
+          min-height: 68px;
+          padding-inline: 8px;
+          font-size: 0.84rem;
+        }
+        .calendar-panel {
+          padding-inline: 8px;
+        }
+        .calendar-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 7px;
+        }
+        .day-card {
+          grid-template-columns: 58px minmax(0, 1fr);
+          gap: 8px;
+          padding: 9px;
+          border-radius: 14px;
+        }
+        .date-badge {
+          min-height: 98px;
+          border-radius: 12px;
+        }
+        .date-badge strong { font-size: 1.7rem; }
+        .date-badge small, .date-badge span { font-size: 0.78rem; }
+        .day-fields {
+          min-height: 98px;
+          gap: 7px;
+        }
+        .day-fields select {
+          min-height: 66px;
+          padding: 5px 8px;
+          font-size: 1rem;
+        }
+        .time-row { gap: 3px; }
+        .time-row input, .time-row select {
+          min-height: 50px;
+          padding-inline: 5px;
+          font-size: 0.86rem;
+        }
+        .bottom-actions { padding: 8px; }
+        .bottom-actions button {
+          min-height: 82px;
+          font-size: 1.12rem;
+        }
+      }
+
+      @media screen and (min-width: 768px) and (pointer: fine) {
+        .phone-shell {
+          width: 90%;
+          max-width: 1000px;
+        }
+      }
+
+      @media screen and (max-width: 767px) {
+        .phone-shell {
+          width: 100%;
+          max-width: 100%;
+        }
+      }
+
+      @media screen and (pointer: coarse), screen and (max-width: 767px) {
+        html {
+          font-size: 18px;
+        }
+
+        body { background: var(--background); }
+        .phone-shell {
+          width: 100%;
+          max-width: 100%;
+          box-shadow: none;
+        }
+        .app-header {
+          min-height: 78px;
+          grid-template-columns: 74px 1fr 56px;
+        }
+        .deadline-bar, .staff-panel, .notes-panel, .month-nav {
+          margin-inline: 10px;
+        }
+        .staff-panel {
+          grid-template-columns: 1fr;
+          gap: 14px;
+          padding: 14px;
+        }
+        input, select, textarea {
+          min-height: 80px;
+          font-size: 1.16rem;
+        }
+        .deadline-bar strong,
+        .staff-panel label,
+        .notes-panel label {
+          font-size: 1.12rem;
+        }
+        .month-nav {
+          min-height: 74px;
+          grid-template-columns: 62px 1fr 62px;
+        }
+        .nav-button {
+          width: 58px;
+          height: 58px;
+        }
+        .tools {
+          grid-template-columns: 1fr;
+          padding-inline: 10px;
+        }
+        .tools button {
+          min-height: 88px;
+          font-size: 1.16rem;
+        }
+        .calendar-panel {
+          padding-inline: 10px;
+        }
+        .calendar-grid {
+          grid-template-columns: 1fr;
+          gap: 12px;
+        }
+        .day-card {
+          grid-template-columns: 86px minmax(0, 1fr);
+          gap: 14px;
+          padding: 14px;
+          border-radius: 18px;
+        }
+        .date-badge {
+          min-height: 132px;
+          border-radius: 14px;
+        }
+        .date-badge strong { font-size: 2.35rem; }
+        .date-badge small, .date-badge span { font-size: 1rem; }
+        .day-fields { min-height: 132px; }
+        .day-fields select {
+          min-height: 104px;
+          font-size: 1.34rem;
+        }
+        .selected-time {
+          min-height: 42px;
+          font-size: 1.14rem;
+        }
+        .time-modal {
+          padding: 14px;
+        }
+        .time-card {
+          width: min(96vw, 520px);
+          padding: 26px 18px;
+          border-radius: 26px;
+        }
+        .time-card h2 {
+          margin-bottom: 20px;
+          font-size: 1.5rem;
+          text-align: center;
+        }
+        .time-modal-grid {
+          grid-template-columns: 1fr;
+          gap: 16px;
+        }
+        .time-modal-grid label {
+          font-size: 1.16rem;
+        }
+        .time-modal-grid select {
+          min-height: 104px;
+          border-radius: 18px;
+          font-size: 1.48rem;
+        }
+        .time-modal-actions {
+          gap: 12px;
+          margin-top: 22px;
+        }
+        .time-modal-actions button {
+          min-height: 94px;
+          font-size: 1.22rem;
+        }
+        .bottom-actions { padding: 10px; }
+        .bottom-actions button {
+          min-height: 100px;
+          font-size: 1.24rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="phone-shell">
+      <header class="app-header">
+        <div class="logo">ZEN</div>
+        <div>
+          <p>株式会社zen従業員</p>
+          <h1>月間シフト提出</h1>
+        </div>
+        <span class="menu-dot" aria-hidden="true">≡</span>
+      </header>
+
+      <form id="shiftForm" autocomplete="on">
+        <section class="deadline-bar">
+          <strong>提出期限：毎月15日</strong>
+          <span id="connectionStatus">読込中</span>
+        </section>
+
+        <section class="staff-panel" aria-label="提出者情報">
+          <label>
+            名前
+            <select name="name" id="nameSelect" required>
+              <option value="">名前を選択</option>
+            </select>
+          </label>
+          <label>
+            店舗名
+            <select name="store" id="storeSelect" required>
+              <option value="">店舗を選択</option>
+            </select>
+          </label>
+          <label>
+            対象月
+            <input name="month" type="month" required>
+          </label>
+        </section>
+
+        <section class="month-nav" aria-label="対象月操作">
+          <button type="button" class="nav-button" id="prevMonth" aria-label="前月">‹</button>
+          <div>
+            <strong id="monthTitle"></strong>
+            <small id="monthRange"></small>
+          </div>
+          <button type="button" class="nav-button" id="nextMonth" aria-label="翌月">›</button>
+        </section>
+
+        <section class="tools" aria-label="一括入力">
+          <button type="button" data-fill="work">全日 11:00-20:00</button>
+          <button type="button" data-fill="holiday">全日 公休</button>
+          <button type="button" data-fill="clear">未申請に戻す</button>
+        </section>
+
+        <section class="calendar-panel" aria-labelledby="calendarTitle">
+          <div class="page-label" id="calendarTitle">1か月分をまとめて入力</div>
+          <div class="calendar-grid" id="calendarGrid"></div>
+        </section>
+
+        <section class="notes-panel">
+          <label>
+            備考
+            <textarea name="notes" rows="3" placeholder="固定休、早上がり、相談したい日など"></textarea>
+          </label>
+        </section>
+
+        <p class="message" id="message" role="status"></p>
+
+        <footer class="bottom-actions">
+          <button class="alert" type="button" id="loadMine">前回内容</button>
+          <button class="primary" type="submit">申請する</button>
+          <button class="secondary" type="reset">クリア</button>
+        </footer>
+      </form>
+    </main>
+
+    <div class="toast-modal" id="toastModal" role="status" aria-live="polite">
+      <div class="toast-card">
+        <div class="toast-icon">✓</div>
+        <strong id="toastTitle">申請しました</strong>
+        <p id="toastText">シフト希望を保存しました。</p>
+      </div>
+    </div>
+
+    <div class="time-modal" id="timeModal" role="dialog" aria-modal="true" aria-labelledby="timeModalTitle">
+      <div class="time-card">
+        <h2 id="timeModalTitle">時間を選択</h2>
+        <div class="time-modal-grid">
+          <label>
+            開始
+            <select id="modalStart"></select>
+          </label>
+          <label>
+            終了
+            <select id="modalEnd"></select>
+          </label>
+        </div>
+        <div class="time-modal-actions">
+          <button class="secondary" type="button" id="cancelTime">戻る</button>
+          <button class="primary" type="button" id="applyTime">決定</button>
+        </div>
+      </div>
+    </div>
+
+    <template id="dayTemplate">
+      <article class="day-card">
+        <div class="date-badge">
+          <small></small>
+          <strong></strong>
+          <span></span>
+        </div>
+        <div class="day-fields">
+          <select name="type" aria-label="区分">
+            <option value="未申請">未選択</option>
+            <option value="勤務">勤務</option>
+            <option value="公休">公休</option>
+            <option value="有給">有給</option>
+            <option value="PT">PT</option>
+          </select>
+          <input name="start" type="hidden">
+          <input name="end" type="hidden">
+          <div class="selected-time"></div>
+        </div>
+      </article>
+    </template>
+
+    <script>
+      const DEADLINE_DAY = 15;
+      const DEFAULT_START = "11:00";
+      const DEFAULT_END = "20:00";
+      const form = document.querySelector("#shiftForm");
+      const calendarGrid = document.querySelector("#calendarGrid");
+      const dayTemplate = document.querySelector("#dayTemplate");
+      const message = document.querySelector("#message");
+      const connectionStatus = document.querySelector("#connectionStatus");
+      const monthTitle = document.querySelector("#monthTitle");
+      const monthRange = document.querySelector("#monthRange");
+      const monthInput = form.elements.month;
+      const storeSelect = document.querySelector("#storeSelect");
+      const nameSelect = document.querySelector("#nameSelect");
+      const toastModal = document.querySelector("#toastModal");
+      const toastTitle = document.querySelector("#toastTitle");
+      const toastText = document.querySelector("#toastText");
+      const timeModal = document.querySelector("#timeModal");
+      const modalStart = document.querySelector("#modalStart");
+      const modalEnd = document.querySelector("#modalEnd");
+      let activeTimeCard = null;
+      const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+      const storageKey = "monthly-shift-form-draft";
+
+      function getDefaultMonth() {
+        const today = new Date();
+        const target = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+        return toMonthValue(target);
+      }
+
+      function toMonthValue(date) {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      }
+
+      function parseMonth(value) {
+        const [year, month] = value.split("-").map(Number);
+        return new Date(year, month - 1, 1);
+      }
+
+      function daysInMonth(value) {
+        const date = parseMonth(value);
+        return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+      }
+
+      function setMessage(text, type = "") {
+        message.textContent = text;
+        message.className = `message ${type}`.trim();
+      }
+
+      function showToast(title, text) {
+        toastTitle.textContent = title;
+        toastText.textContent = text;
+        toastModal.classList.add("is-open");
+        window.setTimeout(() => {
+          toastModal.classList.remove("is-open");
+        }, 1800);
+      }
+
+      function buildHourOptions(select, firstLabel) {
+        select.innerHTML = `<option value="">${firstLabel}</option>`;
+        for (let hour = 6; hour <= 24; hour++) {
+          const option = document.createElement("option");
+          option.value = `${String(hour).padStart(2, "0")}:00`;
+          option.textContent = `${hour}時`;
+          select.append(option);
+        }
+      }
+
+      function openTimeModal(card) {
+        activeTimeCard = card;
+        const start = card.querySelector('[name="start"]').value || DEFAULT_START;
+        const end = card.querySelector('[name="end"]').value || DEFAULT_END;
+        modalStart.value = start;
+        modalEnd.value = end;
+        timeModal.classList.add("is-open");
+      }
+
+      function closeTimeModal() {
+        timeModal.classList.remove("is-open");
+        activeTimeCard = null;
+      }
+
+      function updateMonthHeader() {
+        const month = parseMonth(monthInput.value);
+        const monthNumber = month.getMonth() + 1;
+        const lastDay = daysInMonth(monthInput.value);
+        monthTitle.textContent = `${month.getFullYear()}/${String(monthNumber).padStart(2, "0")}/01〜${String(monthNumber).padStart(2, "0")}/${lastDay}`;
+        monthRange.textContent = `締切：${monthNumber}月${DEADLINE_DAY}日`;
+      }
+
+      function renderCalendar(existing = {}) {
+        calendarGrid.innerHTML = "";
+        const monthValue = monthInput.value;
+        const date = parseMonth(monthValue);
+        const year = date.getFullYear();
+        const month = date.getMonth();
+        const totalDays = daysInMonth(monthValue);
+
+        for (let day = 1; day <= totalDays; day++) {
+          const current = new Date(year, month, day);
+          const dateValue = `${monthValue}-${String(day).padStart(2, "0")}`;
+          const saved = existing[dateValue] || {};
+          const card = dayTemplate.content.firstElementChild.cloneNode(true);
+          const weekday = current.getDay();
+
+          card.dataset.date = dateValue;
+          if (weekday === 0) card.classList.add("sunday");
+          if (weekday === 6) card.classList.add("saturday");
+
+          card.querySelector(".date-badge small").textContent = `${month + 1}/`;
+          card.querySelector(".date-badge strong").textContent = day;
+          card.querySelector(".date-badge span").textContent = `(${weekdays[weekday]})`;
+          card.querySelector('[name="type"]').value = saved.type || "未申請";
+          card.querySelector('[name="start"]').value = saved.start || "";
+          card.querySelector('[name="end"]').value = saved.end || "";
+          refreshDayState(card);
+
+          card.querySelectorAll("select, input").forEach((input) => {
+            input.addEventListener("input", () => {
+              if (input.name === "type") {
+                handleTypeChange(card);
+              }
+              refreshDayState(card);
+              saveDraft();
+            });
+          });
+
+          calendarGrid.append(card);
+        }
+
+        updateMonthHeader();
+      }
+
+      function refreshDayState(card) {
+        const type = card.querySelector('[name="type"]').value;
+        const start = card.querySelector('[name="start"]').value;
+        const end = card.querySelector('[name="end"]').value;
+        const label = card.querySelector(".selected-time");
+        card.classList.toggle("off", type === "公休" || type === "有給" || type === "未申請");
+        card.classList.toggle("holiday", type === "公休" || type === "有給");
+        label.textContent = type === "勤務" || type === "PT" ? `${formatHour(start)}-${formatHour(end)}` : "";
+      }
+
+      function handleTypeChange(card) {
+        const type = card.querySelector('[name="type"]').value;
+        const start = card.querySelector('[name="start"]');
+        const end = card.querySelector('[name="end"]');
+        if (type === "勤務" || type === "PT") {
+          if (!start.value) start.value = DEFAULT_START;
+          if (!end.value) end.value = DEFAULT_END;
+          openTimeModal(card);
+          return;
+        }
+        start.value = "";
+        end.value = "";
+      }
+
+      function formatHour(value) {
+        if (!value) return "";
+        return String(Number(value.split(":")[0]));
+      }
+
+      function collectPayload() {
+        const formData = new FormData(form);
+        const shifts = [...calendarGrid.querySelectorAll(".day-card")].map((card) => ({
+          date: card.dataset.date,
+          day: Number(card.dataset.date.slice(-2)),
+          weekday: card.querySelector(".date-badge span").textContent.replace(/[()]/g, ""),
+          type: card.querySelector('[name="type"]').value,
+          start: card.querySelector('[name="start"]').value,
+          end: card.querySelector('[name="end"]').value,
+        }));
+
+        return {
+          name: formData.get("name").trim(),
+          store: formData.get("store"),
+          month: formData.get("month"),
+          deadlineDay: DEADLINE_DAY,
+          notes: formData.get("notes").trim(),
+          shifts,
+          submittedAt: new Date().toISOString(),
+        };
+      }
+
+      function groupShiftsByDate(shifts = []) {
+        return Object.fromEntries(shifts.map((shift) => [shift.date, shift]));
+      }
+
+      function saveDraft() {
+        localStorage.setItem(storageKey, JSON.stringify(collectPayload()));
+      }
+
+      function restoreDraft() {
+        const saved = localStorage.getItem(storageKey);
+        if (!saved) {
+          renderCalendar();
+          return;
+        }
+
+        const data = JSON.parse(saved);
+        form.elements.name.value = data.name || "";
+        form.elements.store.value = data.store || "";
+        form.elements.notes.value = data.notes || "";
+        monthInput.value = data.month || monthInput.value || getDefaultMonth();
+        renderCalendar(groupShiftsByDate(data.shifts));
+      }
+
+      function moveMonth(amount) {
+        const current = parseMonth(monthInput.value);
+        current.setMonth(current.getMonth() + amount);
+        monthInput.value = toMonthValue(current);
+        renderCalendar(groupShiftsByDate(collectPayload().shifts));
+        saveDraft();
+      }
+
+      function fillAll(mode) {
+        calendarGrid.querySelectorAll(".day-card").forEach((card) => {
+          const type = card.querySelector('[name="type"]');
+          const start = card.querySelector('[name="start"]');
+          const end = card.querySelector('[name="end"]');
+
+          if (mode === "work") {
+            type.value = "勤務";
+            start.value = DEFAULT_START;
+            end.value = DEFAULT_END;
+          }
+
+          if (mode === "holiday") {
+            type.value = "公休";
+            start.value = "";
+            end.value = "";
+          }
+
+          if (mode === "clear") {
+            type.value = "未申請";
+            start.value = "";
+            end.value = "";
+          }
+
+          refreshDayState(card);
+        });
+
+        saveDraft();
+      }
+
+      function submitForm(event) {
+        event.preventDefault();
+        const payload = collectPayload();
+        const requested = payload.shifts.filter((shift) => shift.type !== "未申請");
+
+        if (!payload.name || !payload.store || !payload.month) {
+          setMessage("名前、店舗名、対象月を入力してください。", "error");
+          return;
+        }
+
+        if (!requested.length) {
+          setMessage("勤務・公休・有給・PTのどれかを1日以上入力してください。", "error");
+          return;
+        }
+
+        setMessage("送信中です...");
+        form.querySelector(".primary").disabled = true;
+
+        google.script.run
+          .withSuccessHandler((result) => {
+            localStorage.setItem(storageKey, JSON.stringify(payload));
+            setMessage(result.updated ? "変更を保存しました。" : "申請しました。", "success");
+            showToast(result.updated ? "変更を保存しました" : "申請しました", "シフト希望をスプレッドシートへ反映しました。");
+            form.querySelector(".primary").disabled = false;
+          })
+          .withFailureHandler((error) => {
+            setMessage(error.message || "送信に失敗しました。", "error");
+            form.querySelector(".primary").disabled = false;
+          })
+          .submitShift(payload);
+      }
+
+      function applyInitialData(data) {
+        nameSelect.innerHTML = '<option value="">名前を選択</option>';
+        data.staffNames.forEach((name) => {
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = name;
+          nameSelect.append(option);
+        });
+
+        storeSelect.innerHTML = '<option value="">店舗を選択</option>';
+        data.stores.forEach((store) => {
+          const option = document.createElement("option");
+          option.value = store.value || store;
+          option.textContent = store.label || store;
+          storeSelect.append(option);
+        });
+        connectionStatus.textContent = data.accepting ? "受付中" : "停止中";
+        connectionStatus.style.color = data.accepting ? "#1b5e20" : "#d32f2f";
+        restoreDraft();
+      }
+
+      document.querySelector("#prevMonth").addEventListener("click", () => moveMonth(-1));
+      document.querySelector("#nextMonth").addEventListener("click", () => moveMonth(1));
+      document.querySelector("#loadMine").addEventListener("click", restoreDraft);
+      document.querySelectorAll(".tools button").forEach((button) => {
+        button.addEventListener("click", () => fillAll(button.dataset.fill));
+      });
+
+      monthInput.addEventListener("input", () => {
+        renderCalendar(groupShiftsByDate(collectPayload().shifts));
+        saveDraft();
+      });
+
+      form.addEventListener("input", saveDraft);
+      form.addEventListener("submit", submitForm);
+      form.addEventListener("reset", () => {
+        setTimeout(() => {
+          localStorage.removeItem(storageKey);
+          monthInput.value = getDefaultMonth();
+          renderCalendar();
+          setMessage("入力内容をクリアしました。");
+        });
+      });
+
+      document.querySelector("#cancelTime").addEventListener("click", () => {
+        if (activeTimeCard) refreshDayState(activeTimeCard);
+        closeTimeModal();
+      });
+
+      document.querySelector("#applyTime").addEventListener("click", () => {
+        if (!activeTimeCard) return;
+        activeTimeCard.querySelector('[name="start"]').value = modalStart.value;
+        activeTimeCard.querySelector('[name="end"]').value = modalEnd.value;
+        refreshDayState(activeTimeCard);
+        saveDraft();
+        closeTimeModal();
+      });
+
+      monthInput.value = getDefaultMonth();
+      buildHourOptions(modalStart, "開始");
+      buildHourOptions(modalEnd, "終了");
+      google.script.run
+        .withSuccessHandler(applyInitialData)
+        .withFailureHandler(() => {
+          connectionStatus.textContent = "読込失敗";
+          setMessage("初期データの読み込みに失敗しました。", "error");
+          renderCalendar();
+        })
+        .getInitialData();
+    </script>
+  </body>
+</html>
