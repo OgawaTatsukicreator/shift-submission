@@ -6,829 +6,677 @@
     <title>月間シフト提出</title>
     <style>
       :root {
-        color-scheme: light;
-        --primary: #2e7d32;
-        --primary-dark: #1b5e20;
-        --primary-soft: #e8f5e9;
+        --bg: #f4f6f8;
         --surface: #ffffff;
-        --surface-2: #f7f9fb;
-        --background: #eef2f6;
-        --outline: #d8dee7;
-        --text: #17202a;
-        --muted: #6b7280;
-        --danger: #d32f2f;
-        --saturday: #1976d2;
-        --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.12), 0 1px 3px rgba(16, 24, 40, 0.1);
-        --shadow-2: 0 6px 16px rgba(16, 24, 40, 0.14);
-        --radius: 12px;
+        --surface-2: #f8fafc;
+        --line: #d9e0e8;
+        --text: #1f2937;
+        --muted: #667085;
+        --primary: #26734d;
+        --primary-dark: #17583a;
+        --danger: #c62828;
+        --blue: #1d5fa7;
+        --holiday: #f3f4f6;
+        --shadow: 0 1px 3px rgba(16, 24, 40, 0.12);
         font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", sans-serif;
       }
 
-      * { box-sizing: border-box; }
+      * {
+        box-sizing: border-box;
+      }
 
       body {
         margin: 0;
         min-height: 100vh;
+        background: var(--bg);
         color: var(--text);
-        background: linear-gradient(180deg, rgba(46, 125, 50, 0.12), transparent 220px), var(--background);
       }
 
-      button, input, select, textarea { font: inherit; }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
 
-      .phone-shell {
-        width: 100%;
-        max-width: 100%;
-        min-height: 100vh;
+      button {
+        cursor: pointer;
+      }
+
+      .app {
+        max-width: 820px;
         margin: 0 auto;
-        background: var(--background);
-        box-shadow: 0 24px 70px rgba(16, 24, 40, 0.18);
+        padding: 6px 6px 96px;
       }
 
-      img {
-        width: 100%;
-        height: auto;
+      .header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 12px;
+        align-items: center;
+        padding: 16px 2px 12px;
+        background: rgba(244, 246, 248, 0.96);
+        backdrop-filter: blur(12px);
+      }
+
+      .header h1,
+      .header p {
+        margin: 0;
+      }
+
+      .header h1 {
+        font-size: 22px;
+        letter-spacing: 0;
+      }
+
+      .header p {
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .status {
+        min-height: 34px;
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 12px;
+        border-radius: 999px;
+        background: #e9f5ee;
+        color: var(--primary-dark);
+        font-size: 13px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .tabs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin: 0 0 12px;
+      }
+
+      .tabs button {
+        min-height: 46px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--muted);
+        font-weight: 900;
+      }
+
+      .tabs button.is-active {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: #fff;
+      }
+
+      .view {
+        display: none;
+      }
+
+      .view.is-active {
         display: block;
       }
 
-      .app-header {
-        min-height: 72px;
-        display: grid;
-        grid-template-columns: 82px 1fr 56px;
-        align-items: center;
-        padding: 8px 0;
-        color: #fff;
-        background: var(--primary);
-        box-shadow: var(--shadow-2);
-        text-align: center;
-      }
-
-      .logo {
-        width: 52px;
-        height: 38px;
-        margin: 0 auto;
-        display: grid;
-        place-items: center;
-        color: var(--primary);
-        background: #fff;
-        border-radius: 10px;
-        font-size: 1.14rem;
-        font-weight: 900;
-        box-shadow: var(--shadow-1);
-      }
-
-      .app-header p, .app-header h1 {
-        margin: 0;
-        line-height: 1.25;
-      }
-
-      .app-header p {
-        color: rgba(255, 255, 255, 0.86);
-        font-size: 0.82rem;
-        font-weight: 700;
-      }
-
-      .app-header h1 {
-        color: #fff;
-        font-size: 1.12rem;
-        font-weight: 800;
-      }
-
-      .menu-dot {
-        width: 36px;
-        height: 36px;
-        display: inline-grid;
-        place-items: center;
-        margin: 0 auto;
-        color: #fff;
-        background: rgba(255, 255, 255, 0.16);
-        border-radius: 999px;
-        font-size: 1.35rem;
-        font-weight: 700;
-      }
-
-      .deadline-bar, .staff-panel, .notes-panel, .month-nav, .day-card {
+      .panel {
         background: var(--surface);
-        box-shadow: var(--shadow-1);
-      }
-
-      .deadline-bar {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        align-items: center;
-        min-height: 44px;
-        margin: 12px 12px 0;
-        padding: 0 14px;
-        border-radius: var(--radius);
-      }
-
-      .deadline-bar strong {
-        color: var(--danger);
-        font-weight: 800;
-      }
-
-      #connectionStatus {
-        min-height: 26px;
-        display: inline-flex;
-        align-items: center;
-        padding: 0 9px;
-        color: var(--muted);
-        background: #f3f4f6;
-        border-radius: 999px;
-        font-size: 0.78rem;
-        font-weight: 700;
-      }
-
-      .staff-panel, .notes-panel {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 10px;
-        margin: 12px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
         padding: 14px;
-        border-radius: var(--radius);
+        margin-bottom: 12px;
       }
 
-      .staff-panel { grid-template-columns: 1fr 1fr; }
-      .staff-panel label:last-child { grid-column: 1 / -1; }
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
 
       label {
         display: grid;
         gap: 6px;
-        color: #374151;
-        font-size: 0.82rem;
-        font-weight: 800;
+        color: #344054;
+        font-size: 13px;
+        font-weight: 900;
       }
 
-      input, select, textarea {
+      input,
+      select,
+      textarea {
         width: 100%;
-        min-height: 58px;
-        border: 1px solid var(--outline);
-        border-radius: 10px;
-        padding: 9px 12px;
+        min-height: 46px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
         background: #fff;
         color: var(--text);
         outline: none;
       }
 
-      textarea { resize: vertical; }
+      textarea {
+        resize: vertical;
+      }
 
-      input:focus, select:focus, textarea:focus {
+      input:focus,
+      select:focus,
+      textarea:focus {
         border-color: var(--primary);
-        box-shadow: 0 0 0 4px rgba(46, 125, 50, 0.14);
+        box-shadow: 0 0 0 3px rgba(38, 115, 77, 0.14);
+      }
+
+      .month-nav,
+      .tools,
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
       }
 
       .month-nav {
-        min-height: 58px;
-        margin: 12px;
         display: grid;
-        grid-template-columns: 44px 1fr 44px;
+        grid-template-columns: 62px 1fr 62px;
         align-items: center;
         gap: 10px;
-        padding: 7px;
-        border-radius: 16px;
+        min-height: 70px;
+        padding: 8px;
         text-align: center;
       }
 
-      .month-nav strong, .month-nav small {
+      .month-title strong,
+      .month-title small {
         display: block;
-        line-height: 1.35;
       }
 
-      .month-nav small {
+      .month-title small {
         color: var(--muted);
         font-weight: 700;
       }
 
-      .nav-button {
+      .button {
+        min-height: 44px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 14px;
+        background: var(--surface);
+        color: var(--text);
+        font-weight: 900;
+      }
+
+      #prevMonth,
+      #nextMonth {
         width: 54px;
         height: 54px;
-        border: 0;
+        min-height: 54px;
+        display: inline-grid;
+        place-items: center;
         border-radius: 999px;
+        padding: 0;
+        background: #2f8338;
+        border-color: #2f8338;
         color: #fff;
-        background: var(--primary);
-        box-shadow: var(--shadow-1);
-        font-size: 1.7rem;
-        font-weight: 800;
+        font-size: 0;
+      }
+
+      #prevMonth::before {
+        content: "‹";
+        font-size: 34px;
         line-height: 1;
+      }
+
+      #nextMonth::before {
+        content: "›";
+        font-size: 34px;
+        line-height: 1;
+      }
+
+      .button.primary {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: #fff;
       }
 
       .tools {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 8px;
-        padding: 0 12px 12px;
       }
 
-      .tools button {
-        min-height: 60px;
-        border: 1px solid transparent;
+      .tools .button {
+        min-height: 62px;
         border-radius: 999px;
-        background: var(--surface);
-        color: var(--primary);
-        box-shadow: var(--shadow-1);
-        font-size: 0.76rem;
-        font-weight: 800;
+        box-shadow: var(--shadow);
       }
 
-      .tools button:first-child {
-        color: #fff;
-        background: var(--primary);
+      .button.danger {
+        background: #fff5f5;
+        border-color: #ffd2d2;
+        color: var(--danger);
       }
 
-      .calendar-panel { padding: 0 12px 96px; }
-
-      .page-label {
-        padding: 4px 0 10px;
-        color: var(--muted);
-        text-align: center;
-        font-weight: 800;
-      }
-
-      .calendar-grid {
+      .calendar {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px;
       }
 
-      .day-card {
+      .day {
         min-width: 0;
+        min-height: 112px;
         display: grid;
-        grid-template-columns: 58px 1fr;
+        grid-template-columns: 58px minmax(0, 1fr);
         gap: 8px;
+        padding: 10px;
         align-items: stretch;
-        padding: 8px;
+        background: var(--surface-2);
+        border: 1px solid var(--line);
         border-radius: 14px;
+        box-shadow: var(--shadow);
       }
 
-      .date-badge {
-        min-height: 82px;
+      .day.sunday .date {
+        background: #e3282e;
+      }
+
+      .day.saturday .date {
+        background: #1e82df;
+      }
+
+      .date {
+        min-height: 92px;
         display: grid;
         place-items: center;
-        padding: 5px;
+        align-content: center;
+        gap: 2px;
+        border-radius: 10px;
+        background: #258234;
         color: #fff;
-        background: var(--primary);
-        border-radius: 12px;
         text-align: center;
-        line-height: 1.05;
-      }
-
-      .date-badge small, .date-badge span {
-        font-size: 0.72rem;
-        font-weight: 800;
-      }
-
-      .date-badge strong {
-        font-size: 1.5rem;
         font-weight: 900;
       }
 
-      .day-card.sunday .date-badge { background: var(--danger); }
-      .day-card.saturday .date-badge { background: var(--saturday); }
-      .day-card.holiday .date-badge { color: #4b5563; background: #e5e7eb; }
+      .date small {
+        color: #fff;
+        font-size: 13px;
+      }
+
+      .date-main {
+        display: grid;
+        gap: 0;
+        line-height: 1;
+      }
+
+      .date-main .month {
+        font-size: 13px;
+      }
+
+      .date-main .day-number {
+        margin-top: 4px;
+        font-size: 26px;
+      }
 
       .day-fields {
-        min-width: 0;
-        min-height: 82px;
         display: grid;
-        gap: 6px;
+        gap: 7px;
         align-content: center;
       }
 
-      .day-fields select {
+      .day-fields select[name="type"] {
         min-height: 58px;
-        padding: 5px 8px;
-        border-radius: 9px;
-        font-weight: 800;
-        font-size: 0.98rem;
+        border-radius: 8px;
+        background: #fff;
+        font-size: 16px;
+        font-weight: 900;
       }
 
       .time-row {
         display: grid;
-        grid-template-columns: 1fr auto 1fr;
-        align-items: center;
-        gap: 5px;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
       }
 
       .time-row.is-hidden {
         display: none;
       }
 
-      .time-row input, .time-row select {
-        min-width: 0;
-        min-height: 38px;
-        padding: 3px 5px;
-        border-radius: 9px;
-        font-size: 0.77rem;
-      }
-
-      .time-row span {
-        color: var(--muted);
-        font-size: 0.78rem;
-        font-weight: 800;
-      }
-
-      .day-card.off { background: var(--surface-2); }
-
       .message {
-        min-height: 28px;
+        min-height: 24px;
         margin: 0;
-        padding: 0 14px 12px;
         color: var(--muted);
         font-weight: 800;
       }
 
-      .message.error { color: var(--danger); }
-      .message.success { color: var(--primary-dark); }
-
-      .toast-modal {
-        position: fixed;
-        inset: 0;
-        z-index: 30;
-        display: none;
-        place-items: center;
-        padding: 24px;
-        background: rgba(17, 24, 39, 0.42);
+      .message.error {
+        color: var(--danger);
       }
 
-      .toast-modal.is-open {
-        display: grid;
-      }
-
-      .toast-card {
-        width: min(88vw, 360px);
-        padding: 28px 22px;
-        color: #17202a;
-        background: #fff;
-        border-radius: 22px;
-        box-shadow: 0 24px 70px rgba(16, 24, 40, 0.28);
-        text-align: center;
-      }
-
-      .toast-icon {
-        width: 58px;
-        height: 58px;
-        display: grid;
-        place-items: center;
-        margin: 0 auto 14px;
-        color: #fff;
-        background: var(--primary);
-        border-radius: 999px;
-        font-size: 1.8rem;
-        font-weight: 900;
-      }
-
-      .toast-card strong {
-        display: block;
-        margin-bottom: 6px;
-        font-size: 1.15rem;
-      }
-
-      .toast-card p {
-        margin: 0;
-        color: var(--muted);
-        font-weight: 700;
-      }
-
-      .selected-time {
-        min-height: 30px;
-        display: grid;
-        place-items: center;
+      .message.success {
         color: var(--primary-dark);
-        font-size: 0.9rem;
-        font-weight: 900;
       }
 
-      .time-modal {
-        position: fixed;
-        inset: 0;
-        z-index: 40;
-        display: none;
-        place-items: center;
-        padding: 24px;
-        background: rgba(17, 24, 39, 0.48);
-      }
-
-      .time-modal.is-open {
-        display: grid;
-      }
-
-      .time-card {
-        width: min(92vw, 420px);
-        padding: 22px;
-        background: #fff;
-        border-radius: 22px;
-        box-shadow: 0 24px 70px rgba(16, 24, 40, 0.3);
-      }
-
-      .time-card h2 {
-        margin: 0 0 16px;
-        font-size: 1.18rem;
-      }
-
-      .time-modal-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-      }
-
-      .time-modal-grid label {
+      .schedule-list {
         display: grid;
         gap: 8px;
-        font-weight: 900;
       }
 
-      .time-modal-grid select {
-        min-height: 72px;
-        font-size: 1.18rem;
-        font-weight: 900;
-      }
-
-      .time-modal-actions {
+      .schedule-row {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        margin-top: 18px;
-      }
-
-      .time-modal-actions button {
-        min-height: 58px;
-        border: 0;
-        border-radius: 999px;
-        font-weight: 900;
-      }
-
-      .bottom-actions {
-        position: sticky;
-        bottom: 0;
-        display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-columns: 110px 1fr 120px 120px;
         gap: 8px;
-        padding: 10px 12px;
-        background: rgba(255, 255, 255, 0.92);
-        border-top: 1px solid rgba(216, 222, 231, 0.9);
-        box-shadow: 0 -8px 22px rgba(16, 24, 40, 0.14);
+        align-items: center;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface-2);
       }
 
-      .bottom-actions button {
-        min-height: 74px;
-        border: 0;
-        border-radius: 999px;
-        font-weight: 900;
+      .schedule-row strong {
+        color: var(--primary-dark);
       }
 
-      .alert { color: var(--primary); background: var(--primary-soft); }
-      .primary { color: #fff; background: var(--primary); }
-      .secondary { color: #4b5563; background: #e5e7eb; }
+      .empty {
+        padding: 18px;
+        border: 1px dashed var(--line);
+        border-radius: 8px;
+        color: var(--muted);
+        text-align: center;
+        font-weight: 800;
+      }
 
-      @media (max-width: 430px) {
-        .phone-shell { box-shadow: none; }
-        .app-header {
-          min-height: 64px;
-          grid-template-columns: 68px 1fr 48px;
+      @media (max-width: 900px) {
+        .form-grid {
+          grid-template-columns: 1fr 1fr;
         }
-        .logo {
-          width: 44px;
-          height: 32px;
-          font-size: 1rem;
+
+        .schedule-row {
+          grid-template-columns: 1fr 1fr;
         }
-        .deadline-bar, .staff-panel, .notes-panel, .month-nav {
-          margin-inline: 8px;
+      }
+
+      @media (max-width: 560px) {
+        .header {
+          grid-template-columns: 1fr;
         }
-        .staff-panel, .notes-panel {
-          padding: 10px;
+
+        .tabs,
+        .form-grid,
+        .schedule-row {
+          grid-template-columns: 1fr;
         }
-        .staff-panel { grid-template-columns: 1fr; }
-        .tools {
-          gap: 5px;
-          padding-inline: 8px;
-        }
-        .tools button {
-          min-height: 68px;
-          padding-inline: 8px;
-          font-size: 0.84rem;
-        }
-        .calendar-panel {
-          padding-inline: 8px;
-        }
-        .calendar-grid {
+
+        .tools,
+        .calendar {
           grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 7px;
-        }
-        .day-card {
-          grid-template-columns: 58px minmax(0, 1fr);
-          gap: 8px;
-          padding: 9px;
-          border-radius: 14px;
-        }
-        .date-badge {
-          min-height: 98px;
-          border-radius: 12px;
-        }
-        .date-badge strong { font-size: 1.7rem; }
-        .date-badge small, .date-badge span { font-size: 0.78rem; }
-        .day-fields {
-          min-height: 98px;
-          gap: 7px;
-        }
-        .day-fields select {
-          min-height: 66px;
-          padding: 5px 8px;
-          font-size: 1rem;
-        }
-        .time-row { gap: 3px; }
-        .time-row input, .time-row select {
-          min-height: 50px;
-          padding-inline: 5px;
-          font-size: 0.86rem;
-        }
-        .bottom-actions { padding: 8px; }
-        .bottom-actions button {
-          min-height: 82px;
-          font-size: 1.12rem;
-        }
-      }
-
-      @media screen and (min-width: 768px) and (pointer: fine) {
-        .phone-shell {
-          width: 90%;
-          max-width: 1000px;
-        }
-      }
-
-      @media screen and (max-width: 767px) {
-        .phone-shell {
-          width: 100%;
-          max-width: 100%;
-        }
-      }
-
-      @media screen and (pointer: coarse), screen and (max-width: 767px) {
-        html {
-          font-size: 18px;
         }
 
-        body { background: var(--background); }
-        .phone-shell {
-          width: 100%;
-          max-width: 100%;
-          box-shadow: none;
-        }
-        .app-header {
-          min-height: 78px;
-          grid-template-columns: 74px 1fr 56px;
-        }
-        .deadline-bar, .staff-panel, .notes-panel, .month-nav {
-          margin-inline: 10px;
-        }
-        .staff-panel {
-          grid-template-columns: 1fr;
-          gap: 14px;
-          padding: 14px;
-        }
-        input, select, textarea {
-          min-height: 80px;
-          font-size: 1.16rem;
-        }
-        .deadline-bar strong,
-        .staff-panel label,
-        .notes-panel label {
-          font-size: 1.12rem;
-        }
-        .month-nav {
-          min-height: 74px;
-          grid-template-columns: 62px 1fr 62px;
-        }
-        .nav-button {
-          width: 58px;
-          height: 58px;
-        }
-        .tools {
-          grid-template-columns: 1fr;
-          padding-inline: 10px;
-        }
-        .tools button {
-          min-height: 88px;
-          font-size: 1.16rem;
-        }
-        .calendar-panel {
-          padding-inline: 10px;
-        }
-        .calendar-grid {
-          grid-template-columns: 1fr;
-          gap: 12px;
-        }
-        .day-card {
-          grid-template-columns: 86px minmax(0, 1fr);
-          gap: 14px;
-          padding: 14px;
-          border-radius: 18px;
-        }
-        .date-badge {
-          min-height: 132px;
-          border-radius: 14px;
-        }
-        .date-badge strong { font-size: 2.35rem; }
-        .date-badge small, .date-badge span { font-size: 1rem; }
-        .day-fields { min-height: 132px; }
-        .day-fields select {
-          min-height: 104px;
-          font-size: 1.34rem;
-        }
-        .selected-time {
-          min-height: 42px;
-          font-size: 1.14rem;
-        }
-        .time-modal {
-          padding: 14px;
-        }
-        .time-card {
-          width: min(96vw, 520px);
-          padding: 26px 18px;
-          border-radius: 26px;
-        }
-        .time-card h2 {
-          margin-bottom: 20px;
-          font-size: 1.5rem;
-          text-align: center;
-        }
-        .time-modal-grid {
-          grid-template-columns: 1fr;
-          gap: 16px;
-        }
-        .time-modal-grid label {
-          font-size: 1.16rem;
-        }
-        .time-modal-grid select {
-          min-height: 104px;
-          border-radius: 18px;
-          font-size: 1.48rem;
-        }
-        .time-modal-actions {
-          gap: 12px;
-          margin-top: 22px;
-        }
-        .time-modal-actions button {
-          min-height: 94px;
-          font-size: 1.22rem;
-        }
-        .bottom-actions { padding: 10px; }
-        .bottom-actions button {
-          min-height: 100px;
-          font-size: 1.24rem;
+        .day {
+          min-height: 0;
         }
       }
     </style>
   </head>
   <body>
-    <main class="phone-shell">
-      <header class="app-header">
-        <div class="logo">ZEN</div>
+    <main class="app">
+      <header class="header">
         <div>
-          <p>株式会社zen従業員</p>
           <h1>月間シフト提出</h1>
+          <p>エリア、店舗、名前を選択してシフト希望を提出します。</p>
         </div>
-        <span class="menu-dot" aria-hidden="true">≡</span>
+        <span class="status" id="connectionStatus">読込中</span>
       </header>
 
-      <form id="shiftForm" autocomplete="on">
-        <section class="deadline-bar">
-          <strong>提出期限：毎月15日</strong>
-          <span id="connectionStatus">読込中</span>
-        </section>
+      <nav class="tabs" aria-label="表示切替">
+        <button type="button" class="is-active" data-view="submitView">希望提出</button>
+        <button type="button" data-view="scheduleView">希望・確定確認</button>
+        <button type="button" data-view="ptView">PT申請</button>
+      </nav>
 
-        <section class="staff-panel" aria-label="提出者情報">
-          <label>
-            名前
-            <select name="name" id="nameSelect" required>
-              <option value="">名前を選択</option>
-            </select>
-          </label>
-          <label>
-            店舗名
-            <select name="store" id="storeSelect" required>
-              <option value="">店舗を選択</option>
-            </select>
-          </label>
-          <label>
-            対象月
-            <input name="month" type="month" required>
-          </label>
-        </section>
+      <section class="view is-active" id="submitView">
+        <form id="shiftForm" autocomplete="on">
+          <section class="panel">
+            <div class="form-grid">
+              <label>
+                エリア
+                <select name="areaId" id="areaSelect" required></select>
+              </label>
+              <label>
+                店舗
+                <select name="storeId" id="storeSelect" required></select>
+              </label>
+              <label>
+                名前
+                <select name="employeeId" id="employeeSelect" required></select>
+              </label>
+              <label>
+                対象月
+                <input name="month" id="monthInput" type="month" required>
+              </label>
+            </div>
+          </section>
 
-        <section class="month-nav" aria-label="対象月操作">
-          <button type="button" class="nav-button" id="prevMonth" aria-label="前月">‹</button>
-          <div>
-            <strong id="monthTitle"></strong>
-            <small id="monthRange"></small>
+          <section class="panel month-nav">
+            <button type="button" class="button" id="prevMonth">前月</button>
+            <div class="month-title">
+              <strong id="monthTitle"></strong>
+              <small id="monthRange"></small>
+            </div>
+            <button type="button" class="button" id="nextMonth">翌月</button>
+          </section>
+
+          <section class="panel tools">
+            <button type="button" class="button primary" data-fill="work">全日 勤務可能</button>
+            <button type="button" class="button" data-fill="holiday">全日 休み希望</button>
+            <button type="button" class="button danger" data-fill="clear">全日 未入力</button>
+          </section>
+
+          <section class="calendar" id="calendarGrid"></section>
+
+          <section class="panel">
+            <label>
+              備考
+              <textarea name="notes" rows="3" placeholder="固定休、早上がり、相談したい日など"></textarea>
+            </label>
+          </section>
+
+          <section class="panel actions">
+            <button type="submit" class="button primary">シフト希望を提出</button>
+            <button type="button" class="button" id="loadDraft">下書きを復元</button>
+            <button type="reset" class="button danger">入力をクリア</button>
+            <p class="message" id="message" role="status"></p>
+          </section>
+        </form>
+      </section>
+
+      <section class="view" id="scheduleView">
+        <section class="panel">
+          <div class="form-grid">
+            <label>
+              エリア
+              <select id="scheduleAreaSelect"></select>
+            </label>
+            <label>
+              店舗
+              <select id="scheduleStoreSelect"></select>
+            </label>
+            <label>
+              名前
+              <select id="scheduleEmployeeSelect"></select>
+            </label>
+            <label>
+              対象月
+              <input id="scheduleMonthInput" type="month">
+            </label>
           </div>
-          <button type="button" class="nav-button" id="nextMonth" aria-label="翌月">›</button>
         </section>
-
-        <section class="tools" aria-label="一括入力">
-          <button type="button" data-fill="work">全日 11:00-20:00</button>
-          <button type="button" data-fill="holiday">全日 公休</button>
-          <button type="button" data-fill="clear">未申請に戻す</button>
+        <section class="panel actions">
+          <button type="button" class="button primary" id="loadSchedule">希望・確定を表示</button>
+          <p class="message" id="scheduleMessage"></p>
         </section>
+        <section class="schedule-list" id="scheduleList"></section>
+      </section>
 
-        <section class="calendar-panel" aria-labelledby="calendarTitle">
-          <div class="page-label" id="calendarTitle">1か月分をまとめて入力</div>
-          <div class="calendar-grid" id="calendarGrid"></div>
-        </section>
-
-        <section class="notes-panel">
-          <label>
-            備考
-            <textarea name="notes" rows="3" placeholder="固定休、早上がり、相談したい日など"></textarea>
-          </label>
-        </section>
-
-        <p class="message" id="message" role="status"></p>
-
-        <footer class="bottom-actions">
-          <button class="alert" type="button" id="loadMine">前回内容</button>
-          <button class="primary" type="submit">申請する</button>
-          <button class="secondary" type="reset">クリア</button>
-        </footer>
-      </form>
+      <section class="view" id="ptView">
+        <form id="ptForm">
+          <section class="panel">
+            <div class="form-grid">
+              <label>
+                エリア
+                <select name="areaId" id="ptAreaSelect" required></select>
+              </label>
+              <label>
+                店舗
+                <select name="storeId" id="ptStoreSelect" required></select>
+              </label>
+              <label>
+                名前
+                <select name="employeeId" id="ptEmployeeSelect" required></select>
+              </label>
+              <label>
+                PT勤務日
+                <input name="date" type="date" required>
+              </label>
+              <label>
+                開始
+                <select name="start" id="ptStart"></select>
+              </label>
+              <label>
+                終了
+                <select name="end" id="ptEnd"></select>
+              </label>
+            </div>
+          </section>
+          <section class="panel">
+            <label>
+              備考
+              <textarea name="notes" rows="3" placeholder="PT申請の補足"></textarea>
+            </label>
+          </section>
+          <section class="panel actions">
+            <button type="submit" class="button primary">PTを申請</button>
+            <p class="message" id="ptMessage"></p>
+          </section>
+        </form>
+      </section>
     </main>
 
-    <div class="toast-modal" id="toastModal" role="status" aria-live="polite">
-      <div class="toast-card">
-        <div class="toast-icon">✓</div>
-        <strong id="toastTitle">申請しました</strong>
-        <p id="toastText">シフト希望を保存しました。</p>
-      </div>
-    </div>
-
-    <div class="time-modal" id="timeModal" role="dialog" aria-modal="true" aria-labelledby="timeModalTitle">
-      <div class="time-card">
-        <h2 id="timeModalTitle">時間を選択</h2>
-        <div class="time-modal-grid">
-          <label>
-            開始
-            <select id="modalStart"></select>
-          </label>
-          <label>
-            終了
-            <select id="modalEnd"></select>
-          </label>
-        </div>
-        <div class="time-modal-actions">
-          <button class="secondary" type="button" id="cancelTime">戻る</button>
-          <button class="primary" type="button" id="applyTime">決定</button>
-        </div>
-      </div>
-    </div>
-
     <template id="dayTemplate">
-      <article class="day-card">
-        <div class="date-badge">
-          <small></small>
-          <strong></strong>
-          <span></span>
+      <article class="day">
+        <div class="date">
+          <span class="date-main"></span>
+          <small class="weekday"></small>
         </div>
         <div class="day-fields">
-          <select name="type" aria-label="区分">
-            <option value="未申請">未選択</option>
-            <option value="勤務">勤務</option>
-            <option value="公休">公休</option>
-            <option value="有給">有給</option>
+          <select name="type">
+            <option value="未入力">未入力</option>
+            <option value="勤務可能">勤務可能</option>
+            <option value="休み希望">休み希望</option>
+            <option value="有給希望">有給希望</option>
             <option value="PT">PT</option>
           </select>
-          <input name="start" type="hidden">
-          <input name="end" type="hidden">
-          <div class="selected-time"></div>
+          <div class="time-row is-hidden">
+            <select name="start"></select>
+            <select name="end"></select>
+          </div>
         </div>
       </article>
     </template>
 
     <script>
-      const DEADLINE_DAY = 15;
       const DEFAULT_START = "11:00";
       const DEFAULT_END = "20:00";
-      const form = document.querySelector("#shiftForm");
-      const calendarGrid = document.querySelector("#calendarGrid");
-      const dayTemplate = document.querySelector("#dayTemplate");
-      const message = document.querySelector("#message");
-      const connectionStatus = document.querySelector("#connectionStatus");
-      const monthTitle = document.querySelector("#monthTitle");
-      const monthRange = document.querySelector("#monthRange");
-      const monthInput = form.elements.month;
-      const storeSelect = document.querySelector("#storeSelect");
-      const nameSelect = document.querySelector("#nameSelect");
-      const toastModal = document.querySelector("#toastModal");
-      const toastTitle = document.querySelector("#toastTitle");
-      const toastText = document.querySelector("#toastText");
-      const timeModal = document.querySelector("#timeModal");
-      const modalStart = document.querySelector("#modalStart");
-      const modalEnd = document.querySelector("#modalEnd");
-      let activeTimeCard = null;
+      const DEADLINE_DAY = 15;
       const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
-      const storageKey = "monthly-shift-form-draft";
+      const storageKey = "shift-form-draft-v2";
+      const state = {
+        areas: [],
+        stores: [],
+        staff: [],
+        staffStoreSettings: [],
+      };
+      const fallbackData = {
+        accepting: true,
+        areas: [
+          { areaId: "AREA_NORTH", areaName: "城北エリア" },
+          { areaId: "AREA_WEST", areaName: "八王子エリア" },
+          { areaId: "AREA_EAST", areaName: "東エリア" },
+        ],
+        stores: [
+          { storeId: "STORE_OYAMA", areaId: "AREA_NORTH", storeName: "大山" },
+          { storeId: "STORE_NARIMASU", areaId: "AREA_NORTH", storeName: "成増" },
+          { storeId: "STORE_ITABASHI", areaId: "AREA_NORTH", storeName: "板橋" },
+          { storeId: "STORE_AKATSUKA", areaId: "AREA_NORTH", storeName: "赤塚" },
+          { storeId: "STORE_IKEBUKURO", areaId: "AREA_NORTH", storeName: "池袋" },
+          { storeId: "STORE_HACHIOJI", areaId: "AREA_WEST", storeName: "八王子" },
+          { storeId: "STORE_NISHIHACHI", areaId: "AREA_WEST", storeName: "西八王子" },
+          { storeId: "STORE_MINAMINO", areaId: "AREA_WEST", storeName: "八王子みなみ野" },
+          { storeId: "STORE_KASAI", areaId: "AREA_EAST", storeName: "葛西" },
+        ],
+        staff: [
+          { employeeId: "EMP001", name: "笠原丈" },
+          { employeeId: "EMP002", name: "比嘉里奈" },
+          { employeeId: "EMP003", name: "須藤友樹" },
+          { employeeId: "EMP004", name: "福岡渓吾" },
+          { employeeId: "EMP005", name: "生江健仁" },
+          { employeeId: "EMP006", name: "松田渉" },
+          { employeeId: "EMP007", name: "加藤慎也" },
+          { employeeId: "EMP008", name: "中澤可林" },
+          { employeeId: "EMP009", name: "西久保豪海" },
+          { employeeId: "EMP010", name: "加藤はるか" },
+          { employeeId: "EMP011", name: "小川樹" },
+        ],
+        staffStoreSettings: [
+          { employeeId: "EMP001", areaId: "AREA_NORTH", storeId: "STORE_OYAMA", normalDisplay: true, helpCandidate: true },
+          { employeeId: "EMP002", areaId: "AREA_WEST", storeId: "STORE_HACHIOJI", normalDisplay: true, helpCandidate: true },
+          { employeeId: "EMP003", areaId: "AREA_NORTH", storeId: "STORE_OYAMA", normalDisplay: true, helpCandidate: true },
+          { employeeId: "EMP004", areaId: "AREA_NORTH", storeId: "STORE_NARIMASU", normalDisplay: true, helpCandidate: true },
+          { employeeId: "EMP005", areaId: "AREA_NORTH", storeId: "STORE_ITABASHI", normalDisplay: true, helpCandidate: true },
+          { employeeId: "EMP006", areaId: "AREA_NORTH", storeId: "STORE_AKATSUKA", normalDisplay: true, helpCandidate: true },
+          { employeeId: "EMP007", areaId: "AREA_NORTH", storeId: "STORE_IKEBUKURO", normalDisplay: true, helpCandidate: true },
+          { employeeId: "EMP008", areaId: "AREA_EAST", storeId: "STORE_KASAI", normalDisplay: true, helpCandidate: true },
+          { employeeId: "EMP009", areaId: "AREA_WEST", storeId: "STORE_HACHIOJI", normalDisplay: true, helpCandidate: true },
+          { employeeId: "EMP010", areaId: "AREA_NORTH", storeId: "STORE_OYAMA", normalDisplay: true, helpCandidate: true },
+          { employeeId: "EMP011", areaId: "AREA_WEST", storeId: "STORE_MINAMINO", normalDisplay: true, helpCandidate: true },
+        ],
+      };
+
+      const elements = {
+        status: document.querySelector("#connectionStatus"),
+        shiftForm: document.querySelector("#shiftForm"),
+        area: document.querySelector("#areaSelect"),
+        store: document.querySelector("#storeSelect"),
+        employee: document.querySelector("#employeeSelect"),
+        month: document.querySelector("#monthInput"),
+        calendar: document.querySelector("#calendarGrid"),
+        dayTemplate: document.querySelector("#dayTemplate"),
+        monthTitle: document.querySelector("#monthTitle"),
+        monthRange: document.querySelector("#monthRange"),
+        message: document.querySelector("#message"),
+        scheduleArea: document.querySelector("#scheduleAreaSelect"),
+        scheduleStore: document.querySelector("#scheduleStoreSelect"),
+        scheduleEmployee: document.querySelector("#scheduleEmployeeSelect"),
+        scheduleMonth: document.querySelector("#scheduleMonthInput"),
+        scheduleMessage: document.querySelector("#scheduleMessage"),
+        scheduleList: document.querySelector("#scheduleList"),
+        ptForm: document.querySelector("#ptForm"),
+        ptArea: document.querySelector("#ptAreaSelect"),
+        ptStore: document.querySelector("#ptStoreSelect"),
+        ptEmployee: document.querySelector("#ptEmployeeSelect"),
+        ptStart: document.querySelector("#ptStart"),
+        ptEnd: document.querySelector("#ptEnd"),
+        ptMessage: document.querySelector("#ptMessage"),
+      };
+
+      function setMessage(node, text, type = "") {
+        node.textContent = text;
+        node.className = `message ${type}`.trim();
+      }
 
       function getDefaultMonth() {
         const today = new Date();
-        const target = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-        return toMonthValue(target);
+        return toMonthValue(new Date(today.getFullYear(), today.getMonth() + 1, 1));
       }
 
       function toMonthValue(date) {
@@ -836,7 +684,9 @@
       }
 
       function parseMonth(value) {
+        if (!value) return parseMonth(getDefaultMonth());
         const [year, month] = value.split("-").map(Number);
+        if (!year || !month) return parseMonth(getDefaultMonth());
         return new Date(year, month - 1, 1);
       }
 
@@ -845,55 +695,77 @@
         return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
       }
 
-      function setMessage(text, type = "") {
-        message.textContent = text;
-        message.className = `message ${type}`.trim();
-      }
-
-      function showToast(title, text) {
-        toastTitle.textContent = title;
-        toastText.textContent = text;
-        toastModal.classList.add("is-open");
-        window.setTimeout(() => {
-          toastModal.classList.remove("is-open");
-        }, 1800);
-      }
-
-      function buildHourOptions(select, firstLabel) {
+      function buildHourOptions(select, firstLabel = "選択") {
         select.innerHTML = `<option value="">${firstLabel}</option>`;
         for (let hour = 6; hour <= 24; hour++) {
           const option = document.createElement("option");
           option.value = `${String(hour).padStart(2, "0")}:00`;
-          option.textContent = `${hour}時`;
+          option.textContent = `${hour}:00`;
           select.append(option);
         }
       }
 
-      function openTimeModal(card) {
-        activeTimeCard = card;
-        const start = card.querySelector('[name="start"]').value || DEFAULT_START;
-        const end = card.querySelector('[name="end"]').value || DEFAULT_END;
-        modalStart.value = start;
-        modalEnd.value = end;
-        timeModal.classList.add("is-open");
+      function fillSelect(select, options, placeholder, valueKey, labelKey) {
+        select.innerHTML = `<option value="">${placeholder}</option>`;
+        options.forEach((item) => {
+          const option = document.createElement("option");
+          option.value = item[valueKey];
+          option.textContent = item[labelKey];
+          select.append(option);
+        });
       }
 
-      function closeTimeModal() {
-        timeModal.classList.remove("is-open");
-        activeTimeCard = null;
+      function storesByArea(areaId) {
+        return state.stores.filter((store) => store.areaId === areaId);
+      }
+
+      function employeesByStore(storeId, help = false) {
+        const employeeIds = state.staffStoreSettings
+          .filter((setting) => setting.storeId === storeId && (help ? setting.helpCandidate : setting.normalDisplay))
+          .map((setting) => setting.employeeId);
+        return state.staff.filter((staff) => employeeIds.includes(staff.employeeId));
+      }
+
+      function syncStoreOptions(areaSelect, storeSelect, employeeSelect, help = false) {
+        // エリア選択に応じて店舗候補を更新し、続けて名前候補も更新する。
+        console.log("[syncStoreOptions] 店舗候補更新", { areaId: areaSelect.value, help });
+        const stores = storesByArea(areaSelect.value);
+        fillSelect(storeSelect, stores, "店舗を選択", "storeId", "storeName");
+        if (stores.length) {
+          storeSelect.value = stores[0].storeId;
+        }
+        syncEmployeeOptions(storeSelect, employeeSelect, help);
+      }
+
+      function syncEmployeeOptions(storeSelect, employeeSelect, help = false) {
+        // 店舗選択に応じて、通常表示またはヘルプ候補の従業員だけを表示する。
+        console.log("[syncEmployeeOptions] 名前候補更新", { storeId: storeSelect.value, help });
+        const employees = employeesByStore(storeSelect.value, help);
+        fillSelect(employeeSelect, employees, "名前を選択", "employeeId", "name");
+        if (employees.length) {
+          employeeSelect.value = employees[0].employeeId;
+        }
       }
 
       function updateMonthHeader() {
-        const month = parseMonth(monthInput.value);
+        if (!elements.month.value) {
+          elements.month.value = getDefaultMonth();
+        }
+        const month = parseMonth(elements.month.value);
         const monthNumber = month.getMonth() + 1;
-        const lastDay = daysInMonth(monthInput.value);
-        monthTitle.textContent = `${month.getFullYear()}/${String(monthNumber).padStart(2, "0")}/01〜${String(monthNumber).padStart(2, "0")}/${lastDay}`;
-        monthRange.textContent = `締切：${monthNumber}月${DEADLINE_DAY}日`;
+        const lastDay = daysInMonth(elements.month.value);
+        elements.monthTitle.textContent = `${month.getFullYear()}/${String(monthNumber).padStart(2, "0")}/01 - ${String(monthNumber).padStart(2, "0")}/${lastDay}`;
+        elements.monthRange.textContent = `通常シフト提出期限: 毎月${DEADLINE_DAY}日`;
       }
 
       function renderCalendar(existing = {}) {
-        calendarGrid.innerHTML = "";
-        const monthValue = monthInput.value;
+        // 対象月の日数に合わせて、1か月分の入力カードを描画する。
+        console.log("[renderCalendar] カレンダー描画開始", { month: elements.month.value, existing: Object.keys(existing).length });
+        if (!elements.month.value) {
+          elements.month.value = getDefaultMonth();
+        }
+        elements.calendar.innerHTML = "";
+        const monthValue = elements.month.value;
         const date = parseMonth(monthValue);
         const year = date.getFullYear();
         const month = date.getMonth();
@@ -903,85 +775,65 @@
           const current = new Date(year, month, day);
           const dateValue = `${monthValue}-${String(day).padStart(2, "0")}`;
           const saved = existing[dateValue] || {};
-          const card = dayTemplate.content.firstElementChild.cloneNode(true);
+          const card = elements.dayTemplate.content.firstElementChild.cloneNode(true);
           const weekday = current.getDay();
-
           card.dataset.date = dateValue;
           if (weekday === 0) card.classList.add("sunday");
           if (weekday === 6) card.classList.add("saturday");
+          card.querySelector(".date-main").innerHTML = `<span class="month">${month + 1}/</span><span class="day-number">${day}</span>`;
+          card.querySelector(".weekday").textContent = weekdays[weekday];
 
-          card.querySelector(".date-badge small").textContent = `${month + 1}/`;
-          card.querySelector(".date-badge strong").textContent = day;
-          card.querySelector(".date-badge span").textContent = `(${weekdays[weekday]})`;
-          card.querySelector('[name="type"]').value = saved.type || "未申請";
-          card.querySelector('[name="start"]').value = saved.start || "";
-          card.querySelector('[name="end"]').value = saved.end || "";
-          refreshDayState(card);
+          const type = card.querySelector('[name="type"]');
+          const start = card.querySelector('[name="start"]');
+          const end = card.querySelector('[name="end"]');
+          buildHourOptions(start, "開始");
+          buildHourOptions(end, "終了");
+          type.value = saved.type || "未入力";
+          start.value = saved.start || "";
+          end.value = saved.end || "";
+          refreshTimeVisibility(card);
 
-          card.querySelectorAll("select, input").forEach((input) => {
-            input.addEventListener("input", () => {
-              if (input.name === "type") {
-                handleTypeChange(card);
-              }
-              refreshDayState(card);
-              saveDraft();
-            });
+          type.addEventListener("input", () => {
+            if (["勤務可能", "PT"].includes(type.value)) {
+              if (!start.value) start.value = DEFAULT_START;
+              if (!end.value) end.value = DEFAULT_END;
+            } else {
+              start.value = "";
+              end.value = "";
+            }
+            refreshTimeVisibility(card);
+            saveDraft();
           });
-
-          calendarGrid.append(card);
+          start.addEventListener("input", saveDraft);
+          end.addEventListener("input", saveDraft);
+          elements.calendar.append(card);
         }
-
         updateMonthHeader();
+        console.log("[renderCalendar] カレンダー描画完了", { days: totalDays });
       }
 
-      function refreshDayState(card) {
+      function refreshTimeVisibility(card) {
         const type = card.querySelector('[name="type"]').value;
-        const start = card.querySelector('[name="start"]').value;
-        const end = card.querySelector('[name="end"]').value;
-        const label = card.querySelector(".selected-time");
-        card.classList.toggle("off", type === "公休" || type === "有給" || type === "未申請");
-        card.classList.toggle("holiday", type === "公休" || type === "有給");
-        label.textContent = type === "勤務" || type === "PT" ? `${formatHour(start)}-${formatHour(end)}` : "";
-      }
-
-      function handleTypeChange(card) {
-        const type = card.querySelector('[name="type"]').value;
-        const start = card.querySelector('[name="start"]');
-        const end = card.querySelector('[name="end"]');
-        if (type === "勤務" || type === "PT") {
-          if (!start.value) start.value = DEFAULT_START;
-          if (!end.value) end.value = DEFAULT_END;
-          openTimeModal(card);
-          return;
-        }
-        start.value = "";
-        end.value = "";
-      }
-
-      function formatHour(value) {
-        if (!value) return "";
-        return String(Number(value.split(":")[0]));
+        card.querySelector(".time-row").classList.toggle("is-hidden", !["勤務可能", "PT"].includes(type));
       }
 
       function collectPayload() {
-        const formData = new FormData(form);
-        const shifts = [...calendarGrid.querySelectorAll(".day-card")].map((card) => ({
+        const formData = new FormData(elements.shiftForm);
+        const employee = state.staff.find((item) => item.employeeId === formData.get("employeeId"));
+        const shifts = [...elements.calendar.querySelectorAll(".day")].map((card) => ({
           date: card.dataset.date,
-          day: Number(card.dataset.date.slice(-2)),
-          weekday: card.querySelector(".date-badge span").textContent.replace(/[()]/g, ""),
           type: card.querySelector('[name="type"]').value,
           start: card.querySelector('[name="start"]').value,
           end: card.querySelector('[name="end"]').value,
         }));
-
         return {
-          name: formData.get("name").trim(),
-          store: formData.get("store"),
+          areaId: formData.get("areaId"),
+          storeId: formData.get("storeId"),
+          employeeId: formData.get("employeeId"),
+          name: employee ? employee.name : "",
           month: formData.get("month"),
-          deadlineDay: DEADLINE_DAY,
           notes: formData.get("notes").trim(),
           shifts,
-          submittedAt: new Date().toISOString(),
         };
       }
 
@@ -990,163 +842,340 @@
       }
 
       function saveDraft() {
+        // 入力中の内容をブラウザのローカルストレージに保存する。
+        console.log("[saveDraft] 下書き保存");
         localStorage.setItem(storageKey, JSON.stringify(collectPayload()));
       }
 
       function restoreDraft() {
+        // ローカルストレージから下書きを復元する。
+        console.log("[restoreDraft] 下書き復元開始");
         const saved = localStorage.getItem(storageKey);
         if (!saved) {
           renderCalendar();
+          console.log("[restoreDraft] 下書きなし");
           return;
         }
-
         const data = JSON.parse(saved);
-        form.elements.name.value = data.name || "";
-        form.elements.store.value = data.store || "";
-        form.elements.notes.value = data.notes || "";
-        monthInput.value = data.month || monthInput.value || getDefaultMonth();
+        const hasSavedArea = state.areas.some((area) => area.areaId === data.areaId);
+        elements.area.value = hasSavedArea ? data.areaId : elements.area.value;
+        syncStoreOptions(elements.area, elements.store, elements.employee);
+        const hasSavedStore = storesByArea(elements.area.value).some((store) => store.storeId === data.storeId);
+        if (hasSavedStore) elements.store.value = data.storeId;
+        syncEmployeeOptions(elements.store, elements.employee);
+        const hasSavedEmployee = employeesByStore(elements.store.value).some((employee) => employee.employeeId === data.employeeId);
+        if (hasSavedEmployee) elements.employee.value = data.employeeId;
+        elements.month.value = data.month || elements.month.value || getDefaultMonth();
+        elements.shiftForm.elements.notes.value = data.notes || "";
         renderCalendar(groupShiftsByDate(data.shifts));
+        console.log("[restoreDraft] 下書き復元完了", { month: elements.month.value });
       }
 
       function moveMonth(amount) {
-        const current = parseMonth(monthInput.value);
+        const current = parseMonth(elements.month.value);
         current.setMonth(current.getMonth() + amount);
-        monthInput.value = toMonthValue(current);
+        elements.month.value = toMonthValue(current);
         renderCalendar(groupShiftsByDate(collectPayload().shifts));
         saveDraft();
       }
 
       function fillAll(mode) {
-        calendarGrid.querySelectorAll(".day-card").forEach((card) => {
+        // 1か月分のカードへ一括入力する。
+        console.log("[fillAll] 一括入力", { mode });
+        elements.calendar.querySelectorAll(".day").forEach((card) => {
           const type = card.querySelector('[name="type"]');
           const start = card.querySelector('[name="start"]');
           const end = card.querySelector('[name="end"]');
-
           if (mode === "work") {
-            type.value = "勤務";
+            type.value = "勤務可能";
             start.value = DEFAULT_START;
             end.value = DEFAULT_END;
           }
-
           if (mode === "holiday") {
-            type.value = "公休";
+            type.value = "休み希望";
             start.value = "";
             end.value = "";
           }
-
           if (mode === "clear") {
-            type.value = "未申請";
+            type.value = "未入力";
             start.value = "";
             end.value = "";
           }
-
-          refreshDayState(card);
+          refreshTimeVisibility(card);
         });
-
         saveDraft();
       }
 
-      function submitForm(event) {
+      function submitShift(event) {
+        // 月間シフト希望をGASへ送信する。
         event.preventDefault();
+        if (!hasGoogleRunner()) {
+          setMessage(elements.message, "GAS上で開くと送信できます。現在は画面確認モードです。", "error");
+          console.log("[submitShift] GASランナーなし");
+          return;
+        }
         const payload = collectPayload();
-        const requested = payload.shifts.filter((shift) => shift.type !== "未申請");
-
-        if (!payload.name || !payload.store || !payload.month) {
-          setMessage("名前、店舗名、対象月を入力してください。", "error");
+        console.log("[submitShift] 提出開始", {
+          employeeId: payload.employeeId,
+          areaId: payload.areaId,
+          storeId: payload.storeId,
+          month: payload.month,
+        });
+        const requested = payload.shifts.filter((shift) => shift.type !== "未入力");
+        if (!payload.areaId || !payload.storeId || !payload.employeeId || !payload.month) {
+          setMessage(elements.message, "エリア、店舗、名前、対象月を選択してください。", "error");
           return;
         }
-
         if (!requested.length) {
-          setMessage("勤務・公休・有給・PTのどれかを1日以上入力してください。", "error");
+          setMessage(elements.message, "勤務可能・休み希望・有給希望・PTのどれかを1日以上入力してください。", "error");
           return;
         }
-
-        setMessage("送信中です...");
-        form.querySelector(".primary").disabled = true;
-
+        setMessage(elements.message, "送信中です...");
+        elements.shiftForm.querySelector('[type="submit"]').disabled = true;
         google.script.run
           .withSuccessHandler((result) => {
+            console.log("[submitShift] 提出成功", result);
             localStorage.setItem(storageKey, JSON.stringify(payload));
-            setMessage(result.updated ? "変更を保存しました。" : "申請しました。", "success");
-            showToast(result.updated ? "変更を保存しました" : "申請しました", "シフト希望をスプレッドシートへ反映しました。");
-            form.querySelector(".primary").disabled = false;
+            setMessage(elements.message, result.updated ? "変更を保存しました。" : "シフト希望を提出しました。", "success");
+            elements.shiftForm.querySelector('[type="submit"]').disabled = false;
           })
           .withFailureHandler((error) => {
-            setMessage(error.message || "送信に失敗しました。", "error");
-            form.querySelector(".primary").disabled = false;
+            console.error("[submitShift] 提出失敗", error);
+            setMessage(elements.message, error.message || "送信に失敗しました。", "error");
+            elements.shiftForm.querySelector('[type="submit"]').disabled = false;
           })
           .submitShift(payload);
       }
 
-      function applyInitialData(data) {
-        nameSelect.innerHTML = '<option value="">名前を選択</option>';
-        data.staffNames.forEach((name) => {
-          const option = document.createElement("option");
-          option.value = name;
-          option.textContent = name;
-          nameSelect.append(option);
-        });
-
-        storeSelect.innerHTML = '<option value="">店舗を選択</option>';
-        data.stores.forEach((store) => {
-          const option = document.createElement("option");
-          option.value = store.value || store;
-          option.textContent = store.label || store;
-          storeSelect.append(option);
-        });
-        connectionStatus.textContent = data.accepting ? "受付中" : "停止中";
-        connectionStatus.style.color = data.accepting ? "#1b5e20" : "#d32f2f";
-        restoreDraft();
+      function submitPt(event) {
+        // PT申請をGASへ送信する。
+        event.preventDefault();
+        if (!hasGoogleRunner()) {
+          setMessage(elements.ptMessage, "GAS上で開くとPT申請できます。現在は画面確認モードです。", "error");
+          console.log("[submitPt] GASランナーなし");
+          return;
+        }
+        const formData = new FormData(elements.ptForm);
+        const employee = state.staff.find((item) => item.employeeId === formData.get("employeeId"));
+        const payload = {
+          kind: "pt",
+          employeeId: formData.get("employeeId"),
+          name: employee ? employee.name : "",
+          workAreaId: formData.get("areaId"),
+          workStoreId: formData.get("storeId"),
+          date: formData.get("date"),
+          start: formData.get("start"),
+          end: formData.get("end"),
+          notes: formData.get("notes"),
+        };
+        console.log("[submitPt] PT申請開始", payload);
+        setMessage(elements.ptMessage, "PT申請を送信中です...");
+        google.script.run
+          .withSuccessHandler((result) => {
+            console.log("[submitPt] PT申請成功", result);
+            setMessage(elements.ptMessage, "PT申請を確定シフトへ反映しました。", "success");
+          })
+          .withFailureHandler((error) => {
+            console.error("[submitPt] PT申請失敗", error);
+            setMessage(elements.ptMessage, error.message || "PT申請に失敗しました。", "error");
+          })
+          .submitPtRequest(payload);
       }
 
-      document.querySelector("#prevMonth").addEventListener("click", () => moveMonth(-1));
-      document.querySelector("#nextMonth").addEventListener("click", () => moveMonth(1));
-      document.querySelector("#loadMine").addEventListener("click", restoreDraft);
-      document.querySelectorAll(".tools button").forEach((button) => {
-        button.addEventListener("click", () => fillAll(button.dataset.fill));
+      function loadSchedule() {
+        // 選択した従業員の希望・確定シフトをGASから取得する。
+        if (!hasGoogleRunner()) {
+          setMessage(elements.scheduleMessage, "GAS上で開くと希望・確定シフトを取得できます。現在は画面確認モードです。", "error");
+          console.log("[loadSchedule] GASランナーなし");
+          return;
+        }
+        const employee = state.staff.find((item) => item.employeeId === elements.scheduleEmployee.value);
+        if (!employee || !elements.scheduleMonth.value) {
+          setMessage(elements.scheduleMessage, "名前と対象月を選択してください。", "error");
+          return;
+        }
+        console.log("[loadSchedule] スケジュール取得開始", { employeeId: employee.employeeId, month: elements.scheduleMonth.value });
+        setMessage(elements.scheduleMessage, "読込中です...");
+        elements.scheduleList.innerHTML = "";
+        google.script.run
+          .withSuccessHandler(renderSchedule)
+          .withFailureHandler((error) => {
+            console.error("[loadSchedule] スケジュール取得失敗", error);
+            setMessage(elements.scheduleMessage, error.message || "読込に失敗しました。", "error");
+          })
+          .getMySchedule({ employeeId: employee.employeeId, month: elements.scheduleMonth.value });
+      }
+
+      function renderSchedule(data) {
+        // GASから取得した希望・確定シフトを一覧表示する。
+        if (!data || data.ok === false) {
+          console.error("[renderSchedule] 不正なレスポンス", data);
+          setMessage(elements.scheduleMessage, (data && data.error) || "スケジュールデータの形式が不正です。", "error");
+          elements.scheduleList.innerHTML = "";
+          return;
+        }
+        const confirmed = Array.isArray(data.confirmed) ? data.confirmed : [];
+        const hopes = Array.isArray(data.hopes) ? data.hopes : [];
+        console.log("[renderSchedule] スケジュール描画", {
+          confirmed: confirmed.length,
+          hopes: hopes.length,
+        });
+        setMessage(elements.scheduleMessage, "表示しました。", "success");
+        const rows = [];
+        confirmed.forEach((item) => {
+          rows.push({
+            date: item.date,
+            title: item.type,
+            store: item.workStoreName || item.workStoreId,
+            time: [item.start, item.end].filter(Boolean).join("-"),
+            kind: "確定",
+          });
+        });
+        hopes.forEach((item) => {
+          if (item.type === "未入力") return;
+          rows.push({
+            date: item.date,
+            title: item.type,
+            store: "希望",
+            time: [item.start, item.end].filter(Boolean).join("-"),
+            kind: "希望",
+          });
+        });
+        rows.sort((a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind));
+        if (!rows.length) {
+          elements.scheduleList.innerHTML = '<div class="empty">表示できる希望・確定シフトがありません。</div>';
+          return;
+        }
+        elements.scheduleList.innerHTML = rows.map((row) => `
+          <div class="schedule-row">
+            <strong>${row.date}</strong>
+            <span>${row.kind}: ${row.title}</span>
+            <span>${row.store}</span>
+            <span>${row.time || "-"}</span>
+          </div>
+        `).join("");
+      }
+
+      function applyInitialData(data) {
+        // GASから取得したマスタ情報を画面の選択肢へ反映する。
+        console.log("[applyInitialData] 初期データ反映開始", data);
+        data = normalizeInitialData(data);
+        Object.assign(state, {
+          areas: data.areas,
+          stores: data.stores,
+          staff: data.staff,
+          staffStoreSettings: data.staffStoreSettings,
+        });
+        [elements.area, elements.scheduleArea, elements.ptArea].forEach((select) => fillSelect(select, state.areas, "エリアを選択", "areaId", "areaName"));
+        elements.area.value = state.areas[0] ? state.areas[0].areaId : "";
+        elements.scheduleArea.value = elements.area.value;
+        elements.ptArea.value = elements.area.value;
+        syncStoreOptions(elements.area, elements.store, elements.employee);
+        syncStoreOptions(elements.scheduleArea, elements.scheduleStore, elements.scheduleEmployee);
+        syncStoreOptions(elements.ptArea, elements.ptStore, elements.ptEmployee, true);
+        elements.month.value = getDefaultMonth();
+        elements.scheduleMonth.value = elements.month.value;
+        buildHourOptions(elements.ptStart, "開始");
+        buildHourOptions(elements.ptEnd, "終了");
+        elements.ptStart.value = DEFAULT_START;
+        elements.ptEnd.value = DEFAULT_END;
+        restoreDraft();
+        elements.status.textContent = data.accepting ? "受付中" : "受付停止中";
+        console.log("[applyInitialData] 初期データ反映完了", {
+          areas: state.areas.length,
+          stores: state.stores.length,
+          staff: state.staff.length,
+        });
+      }
+
+      function normalizeInitialData(data) {
+        const source = data && Array.isArray(data.areas) && data.areas.length ? data : fallbackData;
+        return {
+          accepting: source.accepting !== false,
+          areas: source.areas || [],
+          stores: source.stores || [],
+          staff: source.staff || [],
+          staffStoreSettings: (source.staffStoreSettings || []).map((setting) => ({
+            ...setting,
+            normalDisplay: setting.normalDisplay !== false,
+            helpCandidate: setting.helpCandidate !== false,
+          })),
+        };
+      }
+
+      function hasGoogleRunner() {
+        return typeof google !== "undefined" && google.script && google.script.run;
+      }
+
+      function bootWithFallback(reason) {
+        // GAS外で開いた場合や初期データ取得に失敗した場合の画面確認用起動。
+        console.log("[bootWithFallback] フォールバック起動", { reason });
+        applyInitialData(fallbackData);
+        elements.status.textContent = "画面確認";
+        if (reason) {
+          setMessage(elements.message, reason, "error");
+        }
+      }
+
+      document.querySelectorAll(".tabs button").forEach((button) => {
+        button.addEventListener("click", () => {
+          document.querySelectorAll(".tabs button").forEach((item) => item.classList.remove("is-active"));
+          document.querySelectorAll(".view").forEach((view) => view.classList.remove("is-active"));
+          button.classList.add("is-active");
+          document.querySelector(`#${button.dataset.view}`).classList.add("is-active");
+        });
       });
 
-      monthInput.addEventListener("input", () => {
+      elements.area.addEventListener("input", () => {
+        syncStoreOptions(elements.area, elements.store, elements.employee);
+        saveDraft();
+      });
+      elements.store.addEventListener("input", () => {
+        syncEmployeeOptions(elements.store, elements.employee);
+        saveDraft();
+      });
+      elements.employee.addEventListener("input", saveDraft);
+      elements.month.addEventListener("input", () => {
         renderCalendar(groupShiftsByDate(collectPayload().shifts));
         saveDraft();
       });
-
-      form.addEventListener("input", saveDraft);
-      form.addEventListener("submit", submitForm);
-      form.addEventListener("reset", () => {
+      elements.shiftForm.addEventListener("input", saveDraft);
+      elements.shiftForm.addEventListener("submit", submitShift);
+      elements.shiftForm.addEventListener("reset", () => {
         setTimeout(() => {
           localStorage.removeItem(storageKey);
-          monthInput.value = getDefaultMonth();
+          elements.month.value = getDefaultMonth();
           renderCalendar();
-          setMessage("入力内容をクリアしました。");
+          setMessage(elements.message, "入力内容をクリアしました。");
         });
       });
+      document.querySelector("#prevMonth").addEventListener("click", () => moveMonth(-1));
+      document.querySelector("#nextMonth").addEventListener("click", () => moveMonth(1));
+      document.querySelector("#loadDraft").addEventListener("click", restoreDraft);
+      document.querySelectorAll("[data-fill]").forEach((button) => button.addEventListener("click", () => fillAll(button.dataset.fill)));
 
-      document.querySelector("#cancelTime").addEventListener("click", () => {
-        if (activeTimeCard) refreshDayState(activeTimeCard);
-        closeTimeModal();
-      });
+      elements.scheduleArea.addEventListener("input", () => syncStoreOptions(elements.scheduleArea, elements.scheduleStore, elements.scheduleEmployee));
+      elements.scheduleStore.addEventListener("input", () => syncEmployeeOptions(elements.scheduleStore, elements.scheduleEmployee));
+      document.querySelector("#loadSchedule").addEventListener("click", loadSchedule);
 
-      document.querySelector("#applyTime").addEventListener("click", () => {
-        if (!activeTimeCard) return;
-        activeTimeCard.querySelector('[name="start"]').value = modalStart.value;
-        activeTimeCard.querySelector('[name="end"]').value = modalEnd.value;
-        refreshDayState(activeTimeCard);
-        saveDraft();
-        closeTimeModal();
-      });
+      elements.ptArea.addEventListener("input", () => syncStoreOptions(elements.ptArea, elements.ptStore, elements.ptEmployee, true));
+      elements.ptStore.addEventListener("input", () => syncEmployeeOptions(elements.ptStore, elements.ptEmployee, true));
+      elements.ptForm.addEventListener("submit", submitPt);
 
-      monthInput.value = getDefaultMonth();
-      buildHourOptions(modalStart, "開始");
-      buildHourOptions(modalEnd, "終了");
-      google.script.run
-        .withSuccessHandler(applyInitialData)
-        .withFailureHandler(() => {
-          connectionStatus.textContent = "読込失敗";
-          setMessage("初期データの読み込みに失敗しました。", "error");
-          renderCalendar();
-        })
-        .getInitialData();
+      elements.month.value = getDefaultMonth();
+      elements.scheduleMonth.value = elements.month.value;
+      renderCalendar();
+
+      if (hasGoogleRunner()) {
+        google.script.run
+          .withSuccessHandler(applyInitialData)
+          .withFailureHandler((error) => {
+            bootWithFallback(error.message || "初期データの読込に失敗したため、画面確認モードで表示しています。");
+          })
+          .getInitialData();
+      } else {
+        bootWithFallback("GAS以外で開いているため、画面確認モードで表示しています。");
+      }
     </script>
   </body>
 </html>
