@@ -41,6 +41,27 @@
 
       button {
         cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+        transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease, background-color 120ms ease;
+        touch-action: manipulation;
+      }
+
+      button:active,
+      button.is-pressing {
+        transform: translateY(1px) scale(0.98);
+        filter: brightness(0.94);
+        box-shadow: inset 0 2px 5px rgba(15, 23, 42, 0.18);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.62;
+      }
+
+      button:disabled:active,
+      button:disabled.is-pressing {
+        transform: none;
+        filter: none;
       }
 
       .app {
@@ -526,7 +547,6 @@
 
           <section class="panel actions">
             <button type="submit" class="button primary">シフト希望を提出</button>
-            <button type="button" class="button" id="loadDraft">下書きを復元</button>
             <button type="reset" class="button danger">入力をクリア</button>
             <p class="message" id="message" role="status"></p>
           </section>
@@ -1233,6 +1253,20 @@
         }
       }
 
+      function installButtonPressFeedback() {
+        document.querySelectorAll("button").forEach((button) => {
+          button.addEventListener("pointerdown", () => {
+            if (button.disabled) return;
+            button.classList.add("is-pressing");
+          });
+          ["pointerup", "pointercancel", "pointerleave", "blur"].forEach((eventName) => {
+            button.addEventListener(eventName, () => {
+              window.setTimeout(() => button.classList.remove("is-pressing"), 90);
+            });
+          });
+        });
+      }
+
       document.querySelectorAll(".tabs button").forEach((button) => {
         button.addEventListener("click", () => {
           document.querySelectorAll(".tabs button").forEach((item) => item.classList.remove("is-active"));
@@ -1274,7 +1308,6 @@
       });
       document.querySelector("#prevMonth").addEventListener("click", () => moveMonth(-1));
       document.querySelector("#nextMonth").addEventListener("click", () => moveMonth(1));
-      document.querySelector("#loadDraft").addEventListener("click", restoreDraft);
       document.querySelectorAll("[data-fill]").forEach((button) => button.addEventListener("click", () => fillAll(button.dataset.fill)));
 
       elements.scheduleArea.addEventListener("input", () => syncStoreOptions(elements.scheduleArea, elements.scheduleStore, elements.scheduleEmployee));
@@ -1288,6 +1321,7 @@
       elements.month.value = getDefaultMonth();
       elements.scheduleMonth.value = elements.month.value;
       renderCalendar();
+      installButtonPressFeedback();
 
       if (hasGoogleRunner()) {
         google.script.run
