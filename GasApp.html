@@ -386,6 +386,49 @@
         font-weight: 800;
       }
 
+      .confirm-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: none;
+        place-items: center;
+        padding: 18px;
+        background: rgba(15, 23, 42, 0.42);
+      }
+
+      .confirm-backdrop.is-open {
+        display: grid;
+      }
+
+      .confirm-dialog {
+        width: min(420px, 100%);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        box-shadow: 0 18px 48px rgba(15, 23, 42, 0.24);
+        padding: 18px;
+      }
+
+      .confirm-dialog h2 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        letter-spacing: 0;
+      }
+
+      .confirm-dialog p {
+        margin: 0;
+        color: var(--muted);
+        font-weight: 800;
+        line-height: 1.55;
+      }
+
+      .confirm-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 18px;
+      }
+
       @media (max-width: 900px) {
         .form-grid {
           grid-template-columns: 1fr 1fr;
@@ -562,6 +605,17 @@
       </section>
     </main>
 
+    <div class="confirm-backdrop" id="confirmDialog" role="dialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmBody">
+      <div class="confirm-dialog">
+        <h2 id="confirmTitle">確認</h2>
+        <p id="confirmBody"></p>
+        <div class="confirm-actions">
+          <button type="button" class="button" id="confirmCancel">キャンセル</button>
+          <button type="button" class="button primary" id="confirmOk">確定</button>
+        </div>
+      </div>
+    </div>
+
     <template id="dayTemplate">
       <article class="day">
         <div class="date">
@@ -667,11 +721,33 @@
         ptStart: document.querySelector("#ptStart"),
         ptEnd: document.querySelector("#ptEnd"),
         ptMessage: document.querySelector("#ptMessage"),
+        confirmDialog: document.querySelector("#confirmDialog"),
+        confirmTitle: document.querySelector("#confirmTitle"),
+        confirmBody: document.querySelector("#confirmBody"),
+        confirmOk: document.querySelector("#confirmOk"),
+        confirmCancel: document.querySelector("#confirmCancel"),
       };
+      let pendingConfirmAction = null;
+      let suppressNextResetConfirm = false;
 
       function setMessage(node, text, type = "") {
         node.textContent = text;
         node.className = `message ${type}`.trim();
+      }
+
+      function openConfirm({ title, body, confirmLabel = "確定", danger = false, onConfirm }) {
+        pendingConfirmAction = onConfirm;
+        elements.confirmTitle.textContent = title;
+        elements.confirmBody.textContent = body;
+        elements.confirmOk.textContent = confirmLabel;
+        elements.confirmOk.className = `button ${danger ? "danger" : "primary"}`;
+        elements.confirmDialog.classList.add("is-open");
+        elements.confirmCancel.focus();
+      }
+
+      function closeConfirm() {
+        elements.confirmDialog.classList.remove("is-open");
+        pendingConfirmAction = null;
       }
 
       function getDefaultMonth() {
@@ -909,11 +985,6 @@
       function submitShift(event) {
         // 月間シフト希望をGASへ送信する。
         event.preventDefault();
-        if (!hasGoogleRunner()) {
-          setMessage(elements.message, "GAS上で開くと送信できます。現在は画面確認モードです。", "error");
-          console.log("[submitShift] GASランナーなし");
-          return;
-        }
         const payload = collectPayload();
         console.log("[submitShift] 提出開始", {
           employeeId: payload.employeeId,
@@ -930,21 +1001,66 @@
           setMessage(elements.message, "勤務可能・休み希望・有給希望・PTのどれかを1日以上入力してください。", "error");
           return;
         }
+        openConfirm({
+          title: "シフト希望を提出しますか",
+          body: "入力した1か月分のシフト希望を送信します。送信後も再提出すると内容を更新できます。",
+          confirmLabel: "提出する",
+          onConfirm: () => executeSubmitShift(payload),
+        });
+      }
+
+      function executeSubmitShift(payload) {
+        if (!hasGoogleRunner()) {
+          setMessage(elements.message, "GAS上で開くと送信できます。現在は画面確認モードです。", "error");
+          console.log("[executeSubmitShift] GASランナーなし");
+          return;
+        }
+        console.log("[executeSubmitShift] 提出確定", {
+          employeeId: payload.employeeId,
+          areaId: payload.areaId,
+          storeId: payload.storeId,
+          month: payload.month,
+        });
         setMessage(elements.message, "送信中です...");
         elements.shiftForm.querySelector('[type="submit"]').disabled = true;
         google.script.run
           .withSuccessHandler((result) => {
-            console.log("[submitShift] 提出成功", result);
+            console.log("[executeSubmitShift] 提出成功", result);
             localStorage.setItem(storageKey, JSON.stringify(payload));
             setMessage(elements.message, result.updated ? "変更を保存しました。" : "シフト希望を提出しました。", "success");
             elements.shiftForm.querySelector('[type="submit"]').disabled = false;
           })
           .withFailureHandler((error) => {
-            console.error("[submitShift] 提出失敗", error);
+            console.error("[executeSubmitShift] 提出失敗", error);
             setMessage(elements.message, error.message || "送信に失敗しました。", "error");
             elements.shiftForm.querySelector('[type="submit"]').disabled = false;
           })
           .submitShift(payload);
+      }
+
+      function confirmClearShift(event) {
+        if (suppressNextResetConfirm) {
+          suppressNextResetConfirm = false;
+          return;
+        }
+        event.preventDefault();
+        openConfirm({
+          title: "入力内容をクリアしますか",
+          body: "現在入力しているシフト希望と備考をすべて消します。下書きも削除されます。",
+          confirmLabel: "クリアする",
+          danger: true,
+          onConfirm: executeClearShift,
+        });
+      }
+
+      function executeClearShift() {
+        localStorage.removeItem(storageKey);
+        suppressNextResetConfirm = true;
+        elements.shiftForm.reset();
+        elements.month.value = getDefaultMonth();
+        renderCalendar();
+        setMessage(elements.message, "入力内容をクリアしました。");
+        console.log("[executeClearShift] 入力クリア完了");
       }
 
       function submitPt(event) {
@@ -1141,13 +1257,20 @@
       });
       elements.shiftForm.addEventListener("input", saveDraft);
       elements.shiftForm.addEventListener("submit", submitShift);
-      elements.shiftForm.addEventListener("reset", () => {
-        setTimeout(() => {
-          localStorage.removeItem(storageKey);
-          elements.month.value = getDefaultMonth();
-          renderCalendar();
-          setMessage(elements.message, "入力内容をクリアしました。");
-        });
+      elements.shiftForm.addEventListener("reset", confirmClearShift);
+      elements.confirmCancel.addEventListener("click", closeConfirm);
+      elements.confirmOk.addEventListener("click", () => {
+        const action = pendingConfirmAction;
+        closeConfirm();
+        if (typeof action === "function") action();
+      });
+      elements.confirmDialog.addEventListener("click", (event) => {
+        if (event.target === elements.confirmDialog) closeConfirm();
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && elements.confirmDialog.classList.contains("is-open")) {
+          closeConfirm();
+        }
       });
       document.querySelector("#prevMonth").addEventListener("click", () => moveMonth(-1));
       document.querySelector("#nextMonth").addEventListener("click", () => moveMonth(1));
