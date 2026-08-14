@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>月間シフト提出</title>
+    <title>シフト提出・希望確認</title>
     <style>
       :root {
         --bg: #f4f6f8;
@@ -30,6 +30,170 @@
         min-height: 100vh;
         background: var(--bg);
         color: var(--text);
+      }
+
+      .is-hidden {
+        display: none !important;
+      }
+
+      .auth-shell {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px 14px;
+      }
+
+      .auth-frame {
+        width: min(460px, 100%);
+      }
+
+      .auth-brand {
+        margin-bottom: 16px;
+      }
+
+      .auth-brand h1,
+      .auth-brand p {
+        margin: 0;
+      }
+
+      .auth-brand h1 {
+        font-size: 28px;
+        letter-spacing: 0;
+      }
+
+      .auth-brand p {
+        margin-top: 6px;
+        color: var(--muted);
+        font-weight: 700;
+        line-height: 1.55;
+      }
+
+      .auth-panel {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-top: 5px solid var(--primary);
+        border-radius: 8px;
+        background: var(--surface);
+        box-shadow: 0 14px 32px rgba(16, 24, 40, 0.13);
+      }
+
+      .auth-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface-2);
+      }
+
+      .auth-tabs button {
+        min-height: 50px;
+        border: 0;
+        border-bottom: 3px solid transparent;
+        background: transparent;
+        color: var(--muted);
+        font-weight: 900;
+      }
+
+      .auth-tabs button.is-active {
+        border-bottom-color: var(--primary);
+        background: var(--surface);
+        color: var(--primary-dark);
+      }
+
+      .auth-pane {
+        display: none;
+        padding: 22px;
+      }
+
+      .auth-pane.is-active {
+        display: block;
+      }
+
+      .auth-pane h2,
+      .auth-pane > p {
+        margin: 0;
+      }
+
+      .auth-pane h2 {
+        font-size: 19px;
+        letter-spacing: 0;
+      }
+
+      .auth-pane > p {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.55;
+      }
+
+      .auth-form {
+        display: grid;
+        gap: 14px;
+        margin-top: 20px;
+      }
+
+      .auth-form .button {
+        width: 100%;
+        min-height: 50px;
+      }
+
+      .auth-message {
+        min-height: 24px;
+        margin: 14px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 800;
+        line-height: 1.5;
+      }
+
+      .auth-message.error {
+        color: var(--danger);
+      }
+
+      .auth-message.success {
+        color: var(--primary-dark);
+      }
+
+      .password-rule,
+      .field-note {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.4;
+      }
+
+      .employee-proof {
+        display: grid;
+        grid-template-columns: 8px 1fr;
+        overflow: hidden;
+        border: 1px solid #b9d9c7;
+        border-radius: 8px;
+        background: #f3faf6;
+      }
+
+      .employee-proof::before {
+        content: "";
+        background: var(--primary);
+      }
+
+      .employee-proof-body {
+        padding: 12px 14px;
+      }
+
+      .employee-proof span,
+      .employee-proof strong {
+        display: block;
+      }
+
+      .employee-proof span {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .employee-proof strong {
+        margin-top: 2px;
+        font-size: 18px;
       }
 
       button,
@@ -70,6 +234,10 @@
         padding: 6px 6px 96px;
       }
 
+      .app:focus {
+        outline: none;
+      }
+
       .header {
         position: sticky;
         top: 0;
@@ -81,6 +249,46 @@
         padding: 16px 2px 12px;
         background: rgba(244, 246, 248, 0.96);
         backdrop-filter: blur(12px);
+      }
+
+      .header-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .user-chip {
+        min-width: 0;
+        display: grid;
+        padding: 6px 10px;
+        border-left: 3px solid var(--primary);
+        background: #eef7f2;
+      }
+
+      .user-chip strong,
+      .user-chip span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .user-chip strong {
+        font-size: 13px;
+      }
+
+      .user-chip span {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .account-button,
+      .logout-button {
+        min-height: 38px;
+        padding: 6px 10px;
+        font-size: 12px;
       }
 
       .header h1,
@@ -156,6 +364,17 @@
         gap: 10px;
       }
 
+      .hope-controls {
+        display: grid;
+        grid-template-columns: minmax(180px, 320px) auto;
+        gap: 10px;
+        align-items: end;
+      }
+
+      .hope-controls .button {
+        min-height: 46px;
+      }
+
       label {
         display: grid;
         gap: 6px;
@@ -186,6 +405,14 @@
       textarea:focus {
         border-color: var(--primary);
         box-shadow: 0 0 0 3px rgba(38, 115, 77, 0.14);
+      }
+
+      select:disabled,
+      input:read-only {
+        border-color: #cbd5df;
+        background: #eef2f5;
+        color: #344054;
+        opacity: 1;
       }
 
       .month-nav,
@@ -298,6 +525,11 @@
         box-shadow: var(--shadow);
       }
 
+      .day.has-error {
+        border-color: var(--danger);
+        box-shadow: 0 0 0 3px rgba(209, 47, 47, 0.14);
+      }
+
       .day.sunday .date {
         background: #e3282e;
       }
@@ -407,7 +639,8 @@
         font-weight: 800;
       }
 
-      .confirm-backdrop {
+      .confirm-backdrop,
+      .password-backdrop {
         position: fixed;
         inset: 0;
         z-index: 50;
@@ -417,11 +650,17 @@
         background: rgba(15, 23, 42, 0.42);
       }
 
-      .confirm-backdrop.is-open {
+      .password-backdrop {
+        z-index: 60;
+      }
+
+      .confirm-backdrop.is-open,
+      .password-backdrop.is-open {
         display: grid;
       }
 
-      .confirm-dialog {
+      .confirm-dialog,
+      .password-dialog {
         width: min(420px, 100%);
         border: 1px solid var(--line);
         border-radius: 12px;
@@ -430,7 +669,8 @@
         padding: 18px;
       }
 
-      .confirm-dialog h2 {
+      .confirm-dialog h2,
+      .password-dialog h2 {
         margin: 0 0 8px;
         font-size: 18px;
         letter-spacing: 0;
@@ -450,6 +690,71 @@
         margin-top: 18px;
       }
 
+      .password-form {
+        display: grid;
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .password-form .message {
+        line-height: 1.5;
+      }
+
+      .result-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        display: none;
+        place-items: center;
+        padding: 18px;
+        background: rgba(15, 23, 42, 0.54);
+      }
+
+      .result-backdrop.is-open {
+        display: grid;
+      }
+
+      .result-dialog {
+        width: min(440px, 100%);
+        border: 1px solid #b9d9c7;
+        border-radius: 8px;
+        background: var(--surface);
+        box-shadow: 0 22px 56px rgba(15, 23, 42, 0.28);
+        padding: 28px 22px 22px;
+        text-align: center;
+      }
+
+      .result-mark {
+        width: 64px;
+        height: 64px;
+        display: grid;
+        place-items: center;
+        margin: 0 auto 16px;
+        border-radius: 999px;
+        background: var(--primary);
+        color: #fff;
+        font-size: 34px;
+        font-weight: 900;
+      }
+
+      .result-dialog h2 {
+        margin: 0;
+        font-size: 23px;
+        letter-spacing: 0;
+      }
+
+      .result-dialog p {
+        margin: 10px 0 20px;
+        color: var(--muted);
+        font-weight: 800;
+        line-height: 1.6;
+      }
+
+      .result-dialog .button {
+        width: 100%;
+        min-height: 50px;
+      }
+
       @media (max-width: 900px) {
         .form-grid {
           grid-template-columns: 1fr 1fr;
@@ -465,10 +770,29 @@
           grid-template-columns: 1fr;
         }
 
-        .tabs,
+        .header-actions {
+          justify-content: space-between;
+        }
+
+        .user-chip {
+          flex: 1 1 100%;
+        }
+
         .form-grid,
+        .hope-controls,
         .schedule-row {
           grid-template-columns: 1fr;
+        }
+
+        .tabs {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 4px;
+        }
+
+        .tabs button {
+          min-width: 0;
+          padding: 6px 3px;
+          font-size: 12px;
         }
 
         .tools,
@@ -483,18 +807,93 @@
     </style>
   </head>
   <body>
-    <main class="app">
+    <section class="auth-shell" id="authView" aria-labelledby="authTitle">
+      <div class="auth-frame">
+        <header class="auth-brand">
+          <h1 id="authTitle">シフト提出・希望確認</h1>
+          <p>従業員IDで本人確認し、自分のシフト希望を提出・確認します。</p>
+        </header>
+
+        <div class="auth-panel">
+          <div class="auth-tabs" role="tablist" aria-label="ログイン方法">
+            <button type="button" class="is-active" id="loginTab" role="tab" aria-selected="true" aria-controls="loginPane" data-auth-pane="loginPane">ログイン</button>
+            <button type="button" id="registerTab" role="tab" aria-selected="false" aria-controls="registerPane" data-auth-pane="registerPane">初めての方</button>
+          </div>
+
+          <section class="auth-pane is-active" id="loginPane" role="tabpanel" aria-labelledby="loginTab">
+            <h2>ログイン</h2>
+            <p>登録した従業員IDとパスワードを入力してください。</p>
+            <form class="auth-form" id="loginForm" autocomplete="on">
+              <label>
+                従業員ID
+                <input name="employeeId" id="loginEmployeeId" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+              </label>
+              <label>
+                パスワード
+                <input name="password" id="loginPassword" type="password" autocomplete="current-password" required>
+              </label>
+              <button type="submit" class="button primary" id="loginButton">ログイン</button>
+            </form>
+            <p class="auth-message" id="loginMessage" role="status" aria-live="polite"></p>
+          </section>
+
+          <section class="auth-pane" id="registerPane" role="tabpanel" aria-labelledby="registerTab">
+            <h2>初回登録</h2>
+            <p>DB管理用スプレッドシートに登録済みの従業員IDを確認します。</p>
+            <form class="auth-form" id="registrationLookupForm" autocomplete="off">
+              <label>
+                従業員ID
+                <input name="employeeId" id="registerEmployeeId" type="text" autocapitalize="none" spellcheck="false" required>
+              </label>
+              <button type="submit" class="button primary" id="registrationLookupButton">従業員IDを確認</button>
+            </form>
+
+            <form class="auth-form is-hidden" id="registrationForm" autocomplete="on">
+              <div class="employee-proof" aria-live="polite">
+                <div class="employee-proof-body">
+                  <span id="verifiedEmployeeId"></span>
+                  <strong id="verifiedEmployeeName"></strong>
+                </div>
+              </div>
+              <input name="employeeId" id="verifiedEmployeeIdInput" type="hidden">
+              <label>
+                パスワード
+                <input name="password" id="registerPassword" type="password" autocomplete="new-password" minlength="8" maxlength="72" required>
+                <span class="password-rule">8文字以上72文字以内</span>
+              </label>
+              <label>
+                パスワードを再入力
+                <input name="passwordConfirm" id="registerPasswordConfirm" type="password" autocomplete="new-password" minlength="8" maxlength="72" required>
+              </label>
+              <button type="submit" class="button primary" id="registerButton">パスワードを登録</button>
+              <button type="button" class="button" id="registrationBackButton">従業員IDを入力し直す</button>
+            </form>
+            <p class="auth-message" id="registerMessage" role="status" aria-live="polite"></p>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <main class="app is-hidden" id="mainApp" tabindex="-1">
       <header class="header">
         <div>
-          <h1>月間シフト提出</h1>
-          <p>エリア、店舗、名前を選択してシフト希望を提出します。</p>
+          <h1>シフト提出・希望確認</h1>
+          <p>シフト希望の提出、提出内容の確認、PT申請ができます。</p>
         </div>
-        <span class="status" id="connectionStatus">読込中</span>
+        <div class="header-actions">
+          <div class="user-chip" aria-label="ログイン中の従業員">
+            <strong id="sessionName"></strong>
+            <span id="sessionEmployeeId"></span>
+          </div>
+          <span class="status" id="connectionStatus">読込中</span>
+          <button type="button" class="button account-button" id="passwordChangeButton">パスワード変更</button>
+          <button type="button" class="button logout-button" id="logoutButton">ログアウト</button>
+        </div>
       </header>
 
       <nav class="tabs" aria-label="表示切替">
         <button type="button" class="is-active" data-view="submitView">希望提出</button>
-        <button type="button" data-view="scheduleView">希望・確定確認</button>
+        <button type="button" data-view="hopeView">希望確認</button>
         <button type="button" data-view="ptView">PT申請</button>
       </nav>
 
@@ -512,7 +911,8 @@
               </label>
               <label>
                 名前
-                <select name="employeeId" id="employeeSelect" required></select>
+                <select name="employeeId" id="employeeSelect" disabled required></select>
+                <span class="field-note">ログインしている本人に固定</span>
               </label>
               <label>
                 対象月
@@ -553,32 +953,18 @@
         </form>
       </section>
 
-      <section class="view" id="scheduleView">
+      <section class="view" id="hopeView">
         <section class="panel">
-          <div class="form-grid">
-            <label>
-              エリア
-              <select id="scheduleAreaSelect"></select>
-            </label>
-            <label>
-              店舗
-              <select id="scheduleStoreSelect"></select>
-            </label>
-            <label>
-              名前
-              <select id="scheduleEmployeeSelect"></select>
-            </label>
+          <div class="hope-controls">
             <label>
               対象月
-              <input id="scheduleMonthInput" type="month">
+              <input id="hopeMonthInput" type="month">
             </label>
+            <button type="button" class="button primary" id="loadHopes">提出済み希望を表示</button>
           </div>
+          <p class="message" id="hopeMessage" role="status"></p>
         </section>
-        <section class="panel actions">
-          <button type="button" class="button primary" id="loadSchedule">希望・確定を表示</button>
-          <p class="message" id="scheduleMessage"></p>
-        </section>
-        <section class="schedule-list" id="scheduleList"></section>
+        <section class="schedule-list" id="hopeList" aria-live="polite"></section>
       </section>
 
       <section class="view" id="ptView">
@@ -595,7 +981,8 @@
               </label>
               <label>
                 名前
-                <select name="employeeId" id="ptEmployeeSelect" required></select>
+                <select name="employeeId" id="ptEmployeeSelect" disabled required></select>
+                <span class="field-note">ログインしている本人に固定</span>
               </label>
               <label>
                 PT勤務日
@@ -636,6 +1023,41 @@
       </div>
     </div>
 
+    <div class="password-backdrop" id="passwordDialog" role="dialog" aria-modal="true" aria-labelledby="passwordDialogTitle">
+      <div class="password-dialog">
+        <h2 id="passwordDialogTitle">パスワード変更</h2>
+        <form class="password-form" id="passwordChangeForm">
+          <label>
+            現在のパスワード
+            <input name="currentPassword" id="currentPassword" type="password" autocomplete="current-password" maxlength="72" required>
+          </label>
+          <label>
+            新しいパスワード
+            <input name="newPassword" id="newPassword" type="password" autocomplete="new-password" minlength="8" maxlength="72" required>
+            <span class="password-rule">8文字以上72文字以内</span>
+          </label>
+          <label>
+            新しいパスワードを再入力
+            <input name="newPasswordConfirm" id="newPasswordConfirm" type="password" autocomplete="new-password" minlength="8" maxlength="72" required>
+          </label>
+          <p class="message" id="passwordChangeMessage" role="status" aria-live="polite"></p>
+          <div class="confirm-actions">
+            <button type="button" class="button" id="passwordChangeCancel">キャンセル</button>
+            <button type="submit" class="button primary" id="passwordChangeSubmit">パスワードを変更</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="result-backdrop" id="resultDialog" role="dialog" aria-modal="true" aria-labelledby="resultTitle" aria-describedby="resultBody">
+      <div class="result-dialog">
+        <div class="result-mark" aria-hidden="true">✓</div>
+        <h2 id="resultTitle">完了しました</h2>
+        <p id="resultBody"></p>
+        <button type="button" class="button primary" id="resultClose">画面に戻る</button>
+      </div>
+    </div>
+
     <template id="dayTemplate">
       <article class="day">
         <div class="date">
@@ -661,62 +1083,56 @@
     <script>
       const DEFAULT_START = "11:00";
       const DEFAULT_END = "20:00";
+      const WORK_MIN_TIME = "11:00";
+      const WORK_MAX_TIME = "20:00";
+      const PT_MIN_TIME = "07:00";
+      const PT_MAX_TIME = "22:00";
       const DEADLINE_DAY = 15;
       const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
       const storageKey = "shift-form-draft-v2";
+      const authStorageKey = "shift-auth-session-v1";
       const state = {
         areas: [],
         stores: [],
         staff: [],
         staffStoreSettings: [],
-      };
-      const fallbackData = {
-        accepting: true,
-        areas: [
-          { areaId: "AREA_NORTH", areaName: "城北エリア" },
-          { areaId: "AREA_WEST", areaName: "八王子エリア" },
-          { areaId: "AREA_EAST", areaName: "東エリア" },
-        ],
-        stores: [
-          { storeId: "STORE_OYAMA", areaId: "AREA_NORTH", storeName: "大山" },
-          { storeId: "STORE_NARIMASU", areaId: "AREA_NORTH", storeName: "成増" },
-          { storeId: "STORE_ITABASHI", areaId: "AREA_NORTH", storeName: "板橋" },
-          { storeId: "STORE_AKATSUKA", areaId: "AREA_NORTH", storeName: "赤塚" },
-          { storeId: "STORE_IKEBUKURO", areaId: "AREA_NORTH", storeName: "池袋" },
-          { storeId: "STORE_HACHIOJI", areaId: "AREA_WEST", storeName: "八王子" },
-          { storeId: "STORE_NISHIHACHI", areaId: "AREA_WEST", storeName: "西八王子" },
-          { storeId: "STORE_MINAMINO", areaId: "AREA_WEST", storeName: "八王子みなみ野" },
-          { storeId: "STORE_KASAI", areaId: "AREA_EAST", storeName: "葛西" },
-        ],
-        staff: [
-          { employeeId: "EMP001", name: "笠原丈" },
-          { employeeId: "EMP002", name: "比嘉里奈" },
-          { employeeId: "EMP003", name: "須藤友樹" },
-          { employeeId: "EMP004", name: "福岡渓吾" },
-          { employeeId: "EMP005", name: "生江健仁" },
-          { employeeId: "EMP006", name: "松田渉" },
-          { employeeId: "EMP007", name: "加藤慎也" },
-          { employeeId: "EMP008", name: "中澤可林" },
-          { employeeId: "EMP009", name: "西久保豪海" },
-          { employeeId: "EMP010", name: "加藤はるか" },
-          { employeeId: "EMP011", name: "小川樹" },
-        ],
-        staffStoreSettings: [
-          { employeeId: "EMP001", areaId: "AREA_NORTH", storeId: "STORE_OYAMA", normalDisplay: true, helpCandidate: true },
-          { employeeId: "EMP002", areaId: "AREA_WEST", storeId: "STORE_HACHIOJI", normalDisplay: true, helpCandidate: true },
-          { employeeId: "EMP003", areaId: "AREA_NORTH", storeId: "STORE_OYAMA", normalDisplay: true, helpCandidate: true },
-          { employeeId: "EMP004", areaId: "AREA_NORTH", storeId: "STORE_NARIMASU", normalDisplay: true, helpCandidate: true },
-          { employeeId: "EMP005", areaId: "AREA_NORTH", storeId: "STORE_ITABASHI", normalDisplay: true, helpCandidate: true },
-          { employeeId: "EMP006", areaId: "AREA_NORTH", storeId: "STORE_AKATSUKA", normalDisplay: true, helpCandidate: true },
-          { employeeId: "EMP007", areaId: "AREA_NORTH", storeId: "STORE_IKEBUKURO", normalDisplay: true, helpCandidate: true },
-          { employeeId: "EMP008", areaId: "AREA_EAST", storeId: "STORE_KASAI", normalDisplay: true, helpCandidate: true },
-          { employeeId: "EMP009", areaId: "AREA_WEST", storeId: "STORE_HACHIOJI", normalDisplay: true, helpCandidate: true },
-          { employeeId: "EMP010", areaId: "AREA_NORTH", storeId: "STORE_OYAMA", normalDisplay: true, helpCandidate: true },
-          { employeeId: "EMP011", areaId: "AREA_WEST", storeId: "STORE_MINAMINO", normalDisplay: true, helpCandidate: true },
-        ],
+        session: null,
+        authToken: "",
+        verifiedEmployee: null,
       };
 
       const elements = {
+        authView: document.querySelector("#authView"),
+        mainApp: document.querySelector("#mainApp"),
+        loginForm: document.querySelector("#loginForm"),
+        loginEmployeeId: document.querySelector("#loginEmployeeId"),
+        loginPassword: document.querySelector("#loginPassword"),
+        loginButton: document.querySelector("#loginButton"),
+        loginMessage: document.querySelector("#loginMessage"),
+        registrationLookupForm: document.querySelector("#registrationLookupForm"),
+        registerEmployeeId: document.querySelector("#registerEmployeeId"),
+        registrationLookupButton: document.querySelector("#registrationLookupButton"),
+        registrationForm: document.querySelector("#registrationForm"),
+        verifiedEmployeeId: document.querySelector("#verifiedEmployeeId"),
+        verifiedEmployeeName: document.querySelector("#verifiedEmployeeName"),
+        verifiedEmployeeIdInput: document.querySelector("#verifiedEmployeeIdInput"),
+        registerPassword: document.querySelector("#registerPassword"),
+        registerPasswordConfirm: document.querySelector("#registerPasswordConfirm"),
+        registerButton: document.querySelector("#registerButton"),
+        registrationBackButton: document.querySelector("#registrationBackButton"),
+        registerMessage: document.querySelector("#registerMessage"),
+        sessionName: document.querySelector("#sessionName"),
+        sessionEmployeeId: document.querySelector("#sessionEmployeeId"),
+        passwordChangeButton: document.querySelector("#passwordChangeButton"),
+        passwordDialog: document.querySelector("#passwordDialog"),
+        passwordChangeForm: document.querySelector("#passwordChangeForm"),
+        currentPassword: document.querySelector("#currentPassword"),
+        newPassword: document.querySelector("#newPassword"),
+        newPasswordConfirm: document.querySelector("#newPasswordConfirm"),
+        passwordChangeMessage: document.querySelector("#passwordChangeMessage"),
+        passwordChangeCancel: document.querySelector("#passwordChangeCancel"),
+        passwordChangeSubmit: document.querySelector("#passwordChangeSubmit"),
+        logoutButton: document.querySelector("#logoutButton"),
         status: document.querySelector("#connectionStatus"),
         shiftForm: document.querySelector("#shiftForm"),
         area: document.querySelector("#areaSelect"),
@@ -728,12 +1144,9 @@
         monthTitle: document.querySelector("#monthTitle"),
         monthRange: document.querySelector("#monthRange"),
         message: document.querySelector("#message"),
-        scheduleArea: document.querySelector("#scheduleAreaSelect"),
-        scheduleStore: document.querySelector("#scheduleStoreSelect"),
-        scheduleEmployee: document.querySelector("#scheduleEmployeeSelect"),
-        scheduleMonth: document.querySelector("#scheduleMonthInput"),
-        scheduleMessage: document.querySelector("#scheduleMessage"),
-        scheduleList: document.querySelector("#scheduleList"),
+        hopeMonth: document.querySelector("#hopeMonthInput"),
+        hopeMessage: document.querySelector("#hopeMessage"),
+        hopeList: document.querySelector("#hopeList"),
         ptForm: document.querySelector("#ptForm"),
         ptArea: document.querySelector("#ptAreaSelect"),
         ptStore: document.querySelector("#ptStoreSelect"),
@@ -746,13 +1159,389 @@
         confirmBody: document.querySelector("#confirmBody"),
         confirmOk: document.querySelector("#confirmOk"),
         confirmCancel: document.querySelector("#confirmCancel"),
+        resultDialog: document.querySelector("#resultDialog"),
+        resultTitle: document.querySelector("#resultTitle"),
+        resultBody: document.querySelector("#resultBody"),
+        resultClose: document.querySelector("#resultClose"),
       };
       let pendingConfirmAction = null;
       let suppressNextResetConfirm = false;
+      let passwordChangePending = false;
 
       function setMessage(node, text, type = "") {
         node.textContent = text;
         node.className = `message ${type}`.trim();
+      }
+
+      function setAuthMessage(node, text, type = "") {
+        node.textContent = text;
+        node.className = `auth-message ${type}`.trim();
+      }
+
+      function setButtonBusy(button, busy, busyLabel = "処理中...") {
+        if (busy) {
+          button.dataset.defaultLabel = button.textContent;
+          button.textContent = busyLabel;
+          button.disabled = true;
+          return;
+        }
+        button.textContent = button.dataset.defaultLabel || button.textContent;
+        button.disabled = false;
+        delete button.dataset.defaultLabel;
+      }
+
+      function switchAuthPane(paneId) {
+        document.querySelectorAll("[data-auth-pane]").forEach((button) => {
+          const active = button.dataset.authPane === paneId;
+          button.classList.toggle("is-active", active);
+          button.setAttribute("aria-selected", String(active));
+        });
+        document.querySelectorAll(".auth-pane").forEach((pane) => {
+          pane.classList.toggle("is-active", pane.id === paneId);
+        });
+        window.setTimeout(() => {
+          const target = paneId === "loginPane" ? elements.loginEmployeeId : elements.registerEmployeeId;
+          target.focus();
+        }, 0);
+      }
+
+      function resetRegistrationVerification() {
+        state.verifiedEmployee = null;
+        elements.registrationForm.reset();
+        elements.registrationForm.classList.add("is-hidden");
+        elements.registrationLookupForm.classList.remove("is-hidden");
+        elements.verifiedEmployeeId.textContent = "";
+        elements.verifiedEmployeeName.textContent = "";
+        elements.verifiedEmployeeIdInput.value = "";
+        setAuthMessage(elements.registerMessage, "");
+        elements.registerEmployeeId.focus();
+      }
+
+      function showAuthenticatedApp(result) {
+        if (!result || !result.ok || !result.session || !result.session.authToken || !result.initialData) {
+          throw new Error("ログイン情報の形式を確認できません。もう一度お試しください。");
+        }
+
+        state.session = result.session;
+        state.authToken = result.session.authToken;
+        try {
+          applyInitialData(result.initialData);
+        } catch (error) {
+          state.session = null;
+          state.authToken = "";
+          throw error;
+        }
+        sessionStorage.setItem(authStorageKey, JSON.stringify({ authToken: state.authToken }));
+        elements.sessionName.textContent = state.session.name;
+        elements.sessionEmployeeId.textContent = state.session.employeeId;
+        elements.authView.classList.add("is-hidden");
+        elements.mainApp.classList.remove("is-hidden");
+        elements.loginForm.reset();
+        setAuthMessage(elements.loginMessage, "");
+        elements.mainApp.focus({ preventScroll: true });
+        console.log("[showAuthenticatedApp] 本人画面を表示", { employeeId: state.session.employeeId });
+      }
+
+      function clearAuthenticatedApp(message = "ログアウトしました。") {
+        sessionStorage.removeItem(authStorageKey);
+        state.session = null;
+        state.authToken = "";
+        state.areas = [];
+        state.stores = [];
+        state.staff = [];
+        state.staffStoreSettings = [];
+        elements.mainApp.classList.add("is-hidden");
+        elements.authView.classList.remove("is-hidden");
+        elements.hopeList.innerHTML = "";
+        switchAuthPane("loginPane");
+        setAuthMessage(elements.loginMessage, message, "success");
+      }
+
+      function submitLogin(event) {
+        event.preventDefault();
+        if (!hasGoogleRunner()) {
+          setAuthMessage(elements.loginMessage, "GASのウェブアプリURLから開いてください。", "error");
+          return;
+        }
+
+        const employeeId = elements.loginEmployeeId.value.trim();
+        const password = elements.loginPassword.value;
+        if (!employeeId || !password) {
+          setAuthMessage(elements.loginMessage, "従業員IDとパスワードを入力してください。", "error");
+          return;
+        }
+
+        console.log("[submitLogin] ログイン開始", { employeeId });
+        setAuthMessage(elements.loginMessage, "ログイン情報を確認しています...");
+        setButtonBusy(elements.loginButton, true, "確認中...");
+        google.script.run
+          .withSuccessHandler((result) => {
+            setButtonBusy(elements.loginButton, false);
+            try {
+              showAuthenticatedApp(result);
+            } catch (error) {
+              console.error("[submitLogin] 応答処理に失敗", error);
+              setAuthMessage(elements.loginMessage, error.message, "error");
+            }
+          })
+          .withFailureHandler((error) => {
+            console.error("[submitLogin] ログイン失敗", error);
+            setButtonBusy(elements.loginButton, false);
+            setAuthMessage(elements.loginMessage, error.message || "ログインできませんでした。入力内容を確認してください。", "error");
+          })
+          .login({ employeeId, password });
+      }
+
+      function lookupRegistrationEmployee(event) {
+        event.preventDefault();
+        if (!hasGoogleRunner()) {
+          setAuthMessage(elements.registerMessage, "GASのウェブアプリURLから開いてください。", "error");
+          return;
+        }
+
+        const employeeId = elements.registerEmployeeId.value.trim();
+        if (!employeeId) {
+          setAuthMessage(elements.registerMessage, "従業員IDを入力してください。", "error");
+          return;
+        }
+
+        console.log("[lookupRegistrationEmployee] 従業員ID確認開始", { employeeId });
+        setAuthMessage(elements.registerMessage, "従業員マスタを確認しています...");
+        setButtonBusy(elements.registrationLookupButton, true, "確認中...");
+        google.script.run
+          .withSuccessHandler((result) => {
+            setButtonBusy(elements.registrationLookupButton, false);
+            if (!result || !result.employee) {
+              setAuthMessage(elements.registerMessage, "従業員情報を確認できませんでした。", "error");
+              return;
+            }
+            state.verifiedEmployee = result.employee;
+            elements.verifiedEmployeeId.textContent = result.employee.employeeId;
+            elements.verifiedEmployeeName.textContent = result.employee.name;
+            elements.verifiedEmployeeIdInput.value = result.employee.employeeId;
+            elements.registrationLookupForm.classList.add("is-hidden");
+            elements.registrationForm.classList.remove("is-hidden");
+            setAuthMessage(elements.registerMessage, "本人情報を確認できました。パスワードを登録してください。", "success");
+            elements.registerPassword.focus();
+          })
+          .withFailureHandler((error) => {
+            console.error("[lookupRegistrationEmployee] 確認失敗", error);
+            setButtonBusy(elements.registrationLookupButton, false);
+            setAuthMessage(elements.registerMessage, error.message || "従業員IDを確認できませんでした。", "error");
+          })
+          .lookupEmployeeForRegistration({ employeeId });
+      }
+
+      function submitRegistration(event) {
+        event.preventDefault();
+        if (!state.verifiedEmployee) {
+          resetRegistrationVerification();
+          setAuthMessage(elements.registerMessage, "先に従業員IDを確認してください。", "error");
+          return;
+        }
+
+        const password = elements.registerPassword.value;
+        const passwordConfirm = elements.registerPasswordConfirm.value;
+        if (password.length < 8) {
+          setAuthMessage(elements.registerMessage, "パスワードは8文字以上で入力してください。", "error");
+          return;
+        }
+        if (password !== passwordConfirm) {
+          setAuthMessage(elements.registerMessage, "確認用パスワードが一致しません。もう一度入力してください。", "error");
+          elements.registerPasswordConfirm.focus();
+          return;
+        }
+
+        console.log("[submitRegistration] 初回登録開始", { employeeId: state.verifiedEmployee.employeeId });
+        setAuthMessage(elements.registerMessage, "パスワードを登録しています...");
+        setButtonBusy(elements.registerButton, true, "登録中...");
+        google.script.run
+          .withSuccessHandler((result) => {
+            setButtonBusy(elements.registerButton, false);
+            try {
+              resetRegistrationVerification();
+              showAuthenticatedApp(result);
+            } catch (error) {
+              console.error("[submitRegistration] 応答処理に失敗", error);
+              setAuthMessage(elements.registerMessage, error.message, "error");
+            }
+          })
+          .withFailureHandler((error) => {
+            console.error("[submitRegistration] 登録失敗", error);
+            setButtonBusy(elements.registerButton, false);
+            setAuthMessage(elements.registerMessage, error.message || "パスワードを登録できませんでした。", "error");
+          })
+          .registerAccount({
+            employeeId: state.verifiedEmployee.employeeId,
+            password,
+            passwordConfirm,
+          });
+      }
+
+      function restoreAuthenticatedSession() {
+        if (!hasGoogleRunner()) {
+          setAuthMessage(elements.loginMessage, "GASのウェブアプリURLから開いてください。", "error");
+          return;
+        }
+
+        let saved = null;
+        try {
+          saved = JSON.parse(sessionStorage.getItem(authStorageKey) || "null");
+        } catch (error) {
+          sessionStorage.removeItem(authStorageKey);
+        }
+        if (!saved || !saved.authToken) {
+          elements.loginEmployeeId.focus();
+          return;
+        }
+
+        setAuthMessage(elements.loginMessage, "ログイン状態を確認しています...");
+        google.script.run
+          .withSuccessHandler((result) => {
+            try {
+              showAuthenticatedApp(result);
+            } catch (error) {
+              sessionStorage.removeItem(authStorageKey);
+              setAuthMessage(elements.loginMessage, error.message, "error");
+            }
+          })
+          .withFailureHandler((error) => {
+            console.warn("[restoreAuthenticatedSession] セッション復元失敗", error);
+            sessionStorage.removeItem(authStorageKey);
+            setAuthMessage(elements.loginMessage, error.message || "ログインの有効期限が切れました。もう一度ログインしてください。", "error");
+            elements.loginEmployeeId.focus();
+          })
+          .getSessionData(saved.authToken);
+      }
+
+      function logoutCurrentUser() {
+        const authToken = state.authToken;
+        elements.logoutButton.disabled = true;
+        if (!hasGoogleRunner() || !authToken) {
+          clearAuthenticatedApp();
+          elements.logoutButton.disabled = false;
+          return;
+        }
+        google.script.run
+          .withSuccessHandler(() => {
+            elements.logoutButton.disabled = false;
+            clearAuthenticatedApp();
+          })
+          .withFailureHandler((error) => {
+            console.warn("[logoutCurrentUser] サーバー側ログアウト失敗", error);
+            elements.logoutButton.disabled = false;
+            clearAuthenticatedApp("端末上のログイン情報を消去しました。");
+          })
+          .logout(authToken);
+      }
+
+      function openPasswordDialog() {
+        elements.passwordChangeForm.reset();
+        setMessage(elements.passwordChangeMessage, "");
+        elements.passwordDialog.classList.add("is-open");
+        window.setTimeout(() => elements.currentPassword.focus(), 0);
+      }
+
+      function closePasswordDialog() {
+        if (passwordChangePending) return;
+        elements.passwordDialog.classList.remove("is-open");
+        elements.passwordChangeForm.reset();
+        setMessage(elements.passwordChangeMessage, "");
+        setButtonBusy(elements.passwordChangeSubmit, false);
+      }
+
+      function setPasswordChangeBusy(busy) {
+        passwordChangePending = busy;
+        elements.passwordChangeForm.setAttribute("aria-busy", String(busy));
+        elements.passwordChangeCancel.disabled = busy;
+        setButtonBusy(elements.passwordChangeSubmit, busy, "変更中...");
+      }
+
+      function submitPasswordChange(event) {
+        event.preventDefault();
+        const currentPassword = elements.currentPassword.value;
+        const newPassword = elements.newPassword.value;
+        const passwordConfirm = elements.newPasswordConfirm.value;
+
+        if (!currentPassword) {
+          setMessage(elements.passwordChangeMessage, "現在のパスワードを入力してください。", "error");
+          elements.currentPassword.focus();
+          return;
+        }
+        if (newPassword.length < 8 || newPassword.length > 72) {
+          setMessage(elements.passwordChangeMessage, "新しいパスワードは8文字以上72文字以内で入力してください。", "error");
+          elements.newPassword.focus();
+          return;
+        }
+        if (newPassword !== passwordConfirm) {
+          setMessage(elements.passwordChangeMessage, "新しいパスワードの再入力が一致しません。", "error");
+          elements.newPasswordConfirm.focus();
+          return;
+        }
+        if (currentPassword === newPassword) {
+          setMessage(elements.passwordChangeMessage, "現在とは異なるパスワードを入力してください。", "error");
+          elements.newPassword.focus();
+          return;
+        }
+        if (!hasGoogleRunner()) {
+          setMessage(elements.passwordChangeMessage, "GASのウェブアプリURLから変更してください。", "error");
+          return;
+        }
+
+        console.log("[submitPasswordChange] パスワード変更開始", { employeeId: state.session && state.session.employeeId });
+        setMessage(elements.passwordChangeMessage, "パスワードを変更しています...");
+        setPasswordChangeBusy(true);
+        google.script.run
+          .withSuccessHandler((result) => {
+            setPasswordChangeBusy(false);
+            if (!result || !result.ok || !result.session || !result.session.authToken) {
+              setMessage(elements.passwordChangeMessage, "変更後のログイン情報を確認できませんでした。もう一度お試しください。", "error");
+              return;
+            }
+            state.session = { ...state.session, ...result.session };
+            state.authToken = result.session.authToken;
+            sessionStorage.setItem(authStorageKey, JSON.stringify({ authToken: state.authToken }));
+            closePasswordDialog();
+            showResultDialog("パスワードを変更しました", "次回から新しいパスワードでログインしてください。");
+            console.log("[submitPasswordChange] パスワード変更完了", { employeeId: state.session.employeeId });
+          })
+          .withFailureHandler((error) => {
+            console.error("[submitPasswordChange] パスワード変更失敗", error);
+            setPasswordChangeBusy(false);
+            const message = error && error.message ? error.message : "パスワードを変更できませんでした。";
+            if (/ログイン|セッション|有効期限/.test(message)) {
+              closePasswordDialog();
+              clearAuthenticatedApp(message);
+              return;
+            }
+            setMessage(elements.passwordChangeMessage, message, "error");
+          })
+          .changePassword({
+            authToken: state.authToken,
+            currentPassword,
+            newPassword,
+            passwordConfirm,
+          });
+      }
+
+      function showResultDialog(title, body) {
+        elements.resultTitle.textContent = title;
+        elements.resultBody.textContent = body;
+        elements.resultDialog.classList.add("is-open");
+        elements.resultClose.focus();
+      }
+
+      function closeResultDialog() {
+        elements.resultDialog.classList.remove("is-open");
+      }
+
+      function handleAuthenticatedFailure(error, messageNode, fallbackMessage) {
+        const message = error && error.message ? error.message : fallbackMessage;
+        if (/ログイン|セッション|有効期限/.test(message)) {
+          clearAuthenticatedApp(message);
+          return;
+        }
+        setMessage(messageNode, message, "error");
       }
 
       function openConfirm({ title, body, confirmLabel = "確定", danger = false, onConfirm }) {
@@ -791,14 +1580,108 @@
         return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
       }
 
-      function buildHourOptions(select, firstLabel = "選択") {
+      function timeToMinutes(value) {
+        const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
+        if (!match) return null;
+        const hour = Number(match[1]);
+        const minute = Number(match[2]);
+        if (hour > 24 || minute > 59 || (hour === 24 && minute !== 0)) return null;
+        return hour * 60 + minute;
+      }
+
+      function normalizeTimeValue(value) {
+        const minutes = timeToMinutes(value);
+        if (minutes === null) return "";
+        const hour = Math.floor(minutes / 60);
+        const minute = minutes % 60;
+        return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+      }
+
+      function isTimeWithinRange(value, minTime, maxTime) {
+        const minutes = timeToMinutes(value);
+        const minMinutes = timeToMinutes(minTime);
+        const maxMinutes = timeToMinutes(maxTime);
+        return minutes !== null && minutes >= minMinutes && minutes <= maxMinutes;
+      }
+
+      function buildHourOptions(select, firstLabel = "選択", minTime = WORK_MIN_TIME, maxTime = WORK_MAX_TIME, selectedValue = "") {
         select.innerHTML = `<option value="">${firstLabel}</option>`;
-        for (let hour = 6; hour <= 24; hour++) {
+        const minHour = Math.floor(timeToMinutes(minTime) / 60);
+        const maxHour = Math.floor(timeToMinutes(maxTime) / 60);
+        for (let hour = minHour; hour <= maxHour; hour++) {
           const option = document.createElement("option");
           option.value = `${String(hour).padStart(2, "0")}:00`;
           option.textContent = `${hour}:00`;
           select.append(option);
         }
+        const normalized = normalizeTimeValue(selectedValue);
+        if (normalized && [...select.options].some((option) => option.value === normalized)) {
+          select.value = normalized;
+        }
+      }
+
+      function getShiftTimeRange(type) {
+        if (type === "勤務可能") {
+          return { min: WORK_MIN_TIME, max: WORK_MAX_TIME, label: "勤務可能" };
+        }
+        if (type === "PT") {
+          return { min: PT_MIN_TIME, max: PT_MAX_TIME, label: "PT" };
+        }
+        return null;
+      }
+
+      function configureTimeOptions(card, preferredStart = "", preferredEnd = "") {
+        const type = card.querySelector('[name="type"]').value;
+        const start = card.querySelector('[name="start"]');
+        const end = card.querySelector('[name="end"]');
+        const range = getShiftTimeRange(type);
+        if (!range) {
+          start.innerHTML = '<option value="">開始</option>';
+          end.innerHTML = '<option value="">終了</option>';
+          return;
+        }
+
+        const startValue = isTimeWithinRange(preferredStart, range.min, range.max) ? preferredStart : DEFAULT_START;
+        const endValue = isTimeWithinRange(preferredEnd, range.min, range.max) ? preferredEnd : DEFAULT_END;
+        buildHourOptions(start, "開始", range.min, range.max, startValue);
+        buildHourOptions(end, "終了", range.min, range.max, endValue);
+      }
+
+      function validateTimeWindow(startValue, endValue, minTime, maxTime, label, date = "") {
+        const context = `${date ? `${date}の` : ""}${label}`;
+        const start = timeToMinutes(startValue);
+        const end = timeToMinutes(endValue);
+        const min = timeToMinutes(minTime);
+        const max = timeToMinutes(maxTime);
+        if (start === null || end === null) {
+          return `${context}は開始時間と終了時間を選択してください。`;
+        }
+        if (start < min || start > max || end < min || end > max) {
+          return `${context}は${minTime}〜${maxTime}の範囲で指定してください。`;
+        }
+        if (start >= end) {
+          return `${context}の開始時間は終了時間より前にしてください。`;
+        }
+        return "";
+      }
+
+      function findShiftTimeIssue(shifts) {
+        for (const shift of shifts) {
+          const range = getShiftTimeRange(shift.type);
+          if (!range) continue;
+          const message = validateTimeWindow(shift.start, shift.end, range.min, range.max, range.label, shift.date);
+          if (message) return { date: shift.date, message };
+        }
+        return null;
+      }
+
+      function focusShiftTimeIssue(issue) {
+        elements.calendar.querySelectorAll(".day.has-error").forEach((card) => card.classList.remove("has-error"));
+        const card = elements.calendar.querySelector(`[data-date="${issue.date}"]`);
+        if (!card) return;
+        card.classList.add("has-error");
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+        window.setTimeout(() => card.querySelector('[name="start"]').focus(), 250);
       }
 
       function fillSelect(select, options, placeholder, valueKey, labelKey) {
@@ -836,11 +1719,30 @@
       function syncEmployeeOptions(storeSelect, employeeSelect, help = false) {
         // 店舗選択に応じて、通常表示またはヘルプ候補の従業員だけを表示する。
         console.log("[syncEmployeeOptions] 名前候補更新", { storeId: storeSelect.value, help });
+        if (state.session) {
+          const current = state.staff.find((staff) => staff.employeeId === state.session.employeeId) || state.session;
+          fillSelect(employeeSelect, [current], "ログイン本人", "employeeId", "name");
+          employeeSelect.value = state.session.employeeId;
+          employeeSelect.disabled = true;
+          return;
+        }
         const employees = employeesByStore(storeSelect.value, help);
         fillSelect(employeeSelect, employees, "名前を選択", "employeeId", "name");
         if (employees.length) {
           employeeSelect.value = employees[0].employeeId;
         }
+      }
+
+      function setLocationDefaults(areaSelect, storeSelect, employeeSelect, areaId, storeId, help = false) {
+        const defaultAreaId = state.areas.some((area) => area.areaId === areaId)
+          ? areaId
+          : (state.areas[0] ? state.areas[0].areaId : "");
+        areaSelect.value = defaultAreaId;
+        syncStoreOptions(areaSelect, storeSelect, employeeSelect, help);
+        if (storesByArea(defaultAreaId).some((store) => store.storeId === storeId)) {
+          storeSelect.value = storeId;
+        }
+        syncEmployeeOptions(storeSelect, employeeSelect, help);
       }
 
       function updateMonthHeader() {
@@ -882,26 +1784,26 @@
           const type = card.querySelector('[name="type"]');
           const start = card.querySelector('[name="start"]');
           const end = card.querySelector('[name="end"]');
-          buildHourOptions(start, "開始");
-          buildHourOptions(end, "終了");
           type.value = saved.type || "未入力";
-          start.value = saved.start || "";
-          end.value = saved.end || "";
+          configureTimeOptions(card, saved.start || "", saved.end || "");
           refreshTimeVisibility(card);
 
           type.addEventListener("input", () => {
-            if (["勤務可能", "PT"].includes(type.value)) {
-              if (!start.value) start.value = DEFAULT_START;
-              if (!end.value) end.value = DEFAULT_END;
-            } else {
-              start.value = "";
-              end.value = "";
-            }
+            const previousStart = start.value;
+            const previousEnd = end.value;
+            configureTimeOptions(card, previousStart, previousEnd);
+            card.classList.remove("has-error");
             refreshTimeVisibility(card);
             saveDraft();
           });
-          start.addEventListener("input", saveDraft);
-          end.addEventListener("input", saveDraft);
+          start.addEventListener("input", () => {
+            card.classList.remove("has-error");
+            saveDraft();
+          });
+          end.addEventListener("input", () => {
+            card.classList.remove("has-error");
+            saveDraft();
+          });
           elements.calendar.append(card);
         }
         updateMonthHeader();
@@ -915,7 +1817,7 @@
 
       function collectPayload() {
         const formData = new FormData(elements.shiftForm);
-        const employee = state.staff.find((item) => item.employeeId === formData.get("employeeId"));
+        const employee = state.session;
         const shifts = [...elements.calendar.querySelectorAll(".day")].map((card) => ({
           date: card.dataset.date,
           type: card.querySelector('[name="type"]').value,
@@ -925,8 +1827,9 @@
         return {
           areaId: formData.get("areaId"),
           storeId: formData.get("storeId"),
-          employeeId: formData.get("employeeId"),
+          employeeId: employee ? employee.employeeId : "",
           name: employee ? employee.name : "",
+          authToken: state.authToken,
           month: formData.get("month"),
           notes: formData.get("notes").trim(),
           shifts,
@@ -937,30 +1840,41 @@
         return Object.fromEntries(shifts.map((shift) => [shift.date, shift]));
       }
 
+      function getDraftStorageKey() {
+        return state.session ? `${storageKey}:${state.session.employeeId}` : storageKey;
+      }
+
       function saveDraft() {
         // 入力中の内容をブラウザのローカルストレージに保存する。
+        if (!state.session || !elements.calendar.children.length) return;
         console.log("[saveDraft] 下書き保存");
-        localStorage.setItem(storageKey, JSON.stringify(collectPayload()));
+        localStorage.setItem(getDraftStorageKey(), JSON.stringify(collectPayload()));
       }
 
       function restoreDraft() {
         // ローカルストレージから下書きを復元する。
         console.log("[restoreDraft] 下書き復元開始");
-        const saved = localStorage.getItem(storageKey);
+        const saved = localStorage.getItem(getDraftStorageKey());
         if (!saved) {
           renderCalendar();
           console.log("[restoreDraft] 下書きなし");
           return;
         }
-        const data = JSON.parse(saved);
+        let data = null;
+        try {
+          data = JSON.parse(saved);
+        } catch (error) {
+          localStorage.removeItem(getDraftStorageKey());
+          renderCalendar();
+          console.warn("[restoreDraft] 保存データが壊れていたため削除", error);
+          return;
+        }
         const hasSavedArea = state.areas.some((area) => area.areaId === data.areaId);
         elements.area.value = hasSavedArea ? data.areaId : elements.area.value;
         syncStoreOptions(elements.area, elements.store, elements.employee);
         const hasSavedStore = storesByArea(elements.area.value).some((store) => store.storeId === data.storeId);
         if (hasSavedStore) elements.store.value = data.storeId;
         syncEmployeeOptions(elements.store, elements.employee);
-        const hasSavedEmployee = employeesByStore(elements.store.value).some((employee) => employee.employeeId === data.employeeId);
-        if (hasSavedEmployee) elements.employee.value = data.employeeId;
         elements.month.value = data.month || elements.month.value || getDefaultMonth();
         elements.shiftForm.elements.notes.value = data.notes || "";
         renderCalendar(groupShiftsByDate(data.shifts));
@@ -984,19 +1898,15 @@
           const end = card.querySelector('[name="end"]');
           if (mode === "work") {
             type.value = "勤務可能";
-            start.value = DEFAULT_START;
-            end.value = DEFAULT_END;
           }
           if (mode === "holiday") {
             type.value = "休み希望";
-            start.value = "";
-            end.value = "";
           }
           if (mode === "clear") {
             type.value = "未入力";
-            start.value = "";
-            end.value = "";
           }
+          configureTimeOptions(card, start.value, end.value);
+          card.classList.remove("has-error");
           refreshTimeVisibility(card);
         });
         saveDraft();
@@ -1013,12 +1923,18 @@
           month: payload.month,
         });
         const requested = payload.shifts.filter((shift) => shift.type !== "未入力");
-        if (!payload.areaId || !payload.storeId || !payload.employeeId || !payload.month) {
-          setMessage(elements.message, "エリア、店舗、名前、対象月を選択してください。", "error");
+        if (!payload.areaId || !payload.storeId || !payload.month) {
+          setMessage(elements.message, "エリア、店舗、対象月を選択してください。", "error");
           return;
         }
         if (!requested.length) {
           setMessage(elements.message, "勤務可能・休み希望・有給希望・PTのどれかを1日以上入力してください。", "error");
+          return;
+        }
+        const timeIssue = findShiftTimeIssue(requested);
+        if (timeIssue) {
+          setMessage(elements.message, timeIssue.message, "error");
+          focusShiftTimeIssue(timeIssue);
           return;
         }
         openConfirm({
@@ -1042,18 +1958,22 @@
           month: payload.month,
         });
         setMessage(elements.message, "送信中です...");
-        elements.shiftForm.querySelector('[type="submit"]').disabled = true;
+        const submitButton = elements.shiftForm.querySelector('[type="submit"]');
+        setButtonBusy(submitButton, true, "送信中...");
         google.script.run
           .withSuccessHandler((result) => {
             console.log("[executeSubmitShift] 提出成功", result);
-            localStorage.setItem(storageKey, JSON.stringify(payload));
-            setMessage(elements.message, result.updated ? "変更を保存しました。" : "シフト希望を提出しました。", "success");
-            elements.shiftForm.querySelector('[type="submit"]').disabled = false;
+            localStorage.setItem(getDraftStorageKey(), JSON.stringify(payload));
+            const title = result.updated ? "シフト希望を更新しました" : "シフト希望を提出しました";
+            const body = `${state.session.name}さんの${payload.month}分を保存しました。希望確認から提出内容を確認できます。`;
+            setMessage(elements.message, title, "success");
+            showResultDialog(title, body);
+            setButtonBusy(submitButton, false);
           })
           .withFailureHandler((error) => {
             console.error("[executeSubmitShift] 提出失敗", error);
-            setMessage(elements.message, error.message || "送信に失敗しました。", "error");
-            elements.shiftForm.querySelector('[type="submit"]').disabled = false;
+            setButtonBusy(submitButton, false);
+            handleAuthenticatedFailure(error, elements.message, "送信に失敗しました。入力内容を確認してください。");
           })
           .submitShift(payload);
       }
@@ -1074,7 +1994,7 @@
       }
 
       function executeClearShift() {
-        localStorage.removeItem(storageKey);
+        localStorage.removeItem(getDraftStorageKey());
         suppressNextResetConfirm = true;
         elements.shiftForm.reset();
         elements.month.value = getDefaultMonth();
@@ -1086,17 +2006,13 @@
       function submitPt(event) {
         // PT申請をGASへ送信する。
         event.preventDefault();
-        if (!hasGoogleRunner()) {
-          setMessage(elements.ptMessage, "GAS上で開くとPT申請できます。現在は画面確認モードです。", "error");
-          console.log("[submitPt] GASランナーなし");
-          return;
-        }
         const formData = new FormData(elements.ptForm);
-        const employee = state.staff.find((item) => item.employeeId === formData.get("employeeId"));
+        const employee = state.session;
         const payload = {
           kind: "pt",
-          employeeId: formData.get("employeeId"),
+          employeeId: employee ? employee.employeeId : "",
           name: employee ? employee.name : "",
+          authToken: state.authToken,
           workAreaId: formData.get("areaId"),
           workStoreId: formData.get("storeId"),
           date: formData.get("date"),
@@ -1104,117 +2020,154 @@
           end: formData.get("end"),
           notes: formData.get("notes"),
         };
+        const timeError = validateTimeWindow(payload.start, payload.end, PT_MIN_TIME, PT_MAX_TIME, "PT", payload.date);
+        if (timeError) {
+          setMessage(elements.ptMessage, timeError, "error");
+          elements.ptStart.focus();
+          return;
+        }
+        if (!hasGoogleRunner()) {
+          setMessage(elements.ptMessage, "GAS上で開くとPT申請できます。現在は画面確認モードです。", "error");
+          console.log("[submitPt] GASランナーなし");
+          return;
+        }
         console.log("[submitPt] PT申請開始", payload);
         setMessage(elements.ptMessage, "PT申請を送信中です...");
+        const submitButton = elements.ptForm.querySelector('[type="submit"]');
+        setButtonBusy(submitButton, true, "送信中...");
         google.script.run
           .withSuccessHandler((result) => {
             console.log("[submitPt] PT申請成功", result);
-            setMessage(elements.ptMessage, "PT申請を確定シフトへ反映しました。", "success");
+            setButtonBusy(submitButton, false);
+            setMessage(elements.ptMessage, "PT申請を受け付けました。", "success");
+            showResultDialog("PT申請を受け付けました", `${state.session.name}さんのPT申請を保存しました。希望確認から内容を確認できます。`);
           })
           .withFailureHandler((error) => {
             console.error("[submitPt] PT申請失敗", error);
-            setMessage(elements.ptMessage, error.message || "PT申請に失敗しました。", "error");
+            setButtonBusy(submitButton, false);
+            handleAuthenticatedFailure(error, elements.ptMessage, "PT申請に失敗しました。入力内容を確認してください。");
           })
           .submitPtRequest(payload);
       }
 
-      function loadSchedule() {
-        // 選択した従業員の希望・確定シフトをGASから取得する。
+      function loadHopes() {
+        // ログイン中の従業員が提出した希望だけをGASから取得する。
         if (!hasGoogleRunner()) {
-          setMessage(elements.scheduleMessage, "GAS上で開くと希望・確定シフトを取得できます。現在は画面確認モードです。", "error");
-          console.log("[loadSchedule] GASランナーなし");
+          setMessage(elements.hopeMessage, "GAS上で開くと提出済み希望を取得できます。現在は画面確認モードです。", "error");
+          console.log("[loadHopes] GASランナーなし");
           return;
         }
-        const employee = state.staff.find((item) => item.employeeId === elements.scheduleEmployee.value);
-        if (!employee || !elements.scheduleMonth.value) {
-          setMessage(elements.scheduleMessage, "名前と対象月を選択してください。", "error");
+        const employee = state.session;
+        if (!employee || !elements.hopeMonth.value) {
+          setMessage(elements.hopeMessage, "対象月を選択してください。", "error");
           return;
         }
-        console.log("[loadSchedule] スケジュール取得開始", { employeeId: employee.employeeId, month: elements.scheduleMonth.value });
-        setMessage(elements.scheduleMessage, "読込中です...");
-        elements.scheduleList.innerHTML = "";
+        console.log("[loadHopes] 希望取得開始", { employeeId: employee.employeeId, month: elements.hopeMonth.value });
+        setMessage(elements.hopeMessage, "読込中です...");
+        elements.hopeList.innerHTML = "";
+        const loadButton = document.querySelector("#loadHopes");
+        setButtonBusy(loadButton, true, "読込中...");
         google.script.run
-          .withSuccessHandler(renderSchedule)
-          .withFailureHandler((error) => {
-            console.error("[loadSchedule] スケジュール取得失敗", error);
-            setMessage(elements.scheduleMessage, error.message || "読込に失敗しました。", "error");
+          .withSuccessHandler((result) => {
+            setButtonBusy(loadButton, false);
+            renderHopes(result);
           })
-          .getMySchedule({ employeeId: employee.employeeId, month: elements.scheduleMonth.value });
+          .withFailureHandler((error) => {
+            console.error("[loadHopes] 希望取得失敗", error);
+            setButtonBusy(loadButton, false);
+            handleAuthenticatedFailure(error, elements.hopeMessage, "読込に失敗しました。もう一度お試しください。");
+          })
+          .getMyShiftHopes({ authToken: state.authToken, month: elements.hopeMonth.value });
       }
 
-      function renderSchedule(data) {
-        // GASから取得した希望・確定シフトを一覧表示する。
+      function renderHopes(data) {
+        // 月間希望と随時提出したPT申請を、日付順に一覧表示する。
         if (!data || data.ok === false) {
-          console.error("[renderSchedule] 不正なレスポンス", data);
-          setMessage(elements.scheduleMessage, (data && data.error) || "スケジュールデータの形式が不正です。", "error");
-          elements.scheduleList.innerHTML = "";
+          console.error("[renderHopes] 不正なレスポンス", data);
+          setMessage(elements.hopeMessage, (data && data.error) || "希望データの形式が不正です。", "error");
+          elements.hopeList.innerHTML = "";
           return;
         }
-        const confirmed = Array.isArray(data.confirmed) ? data.confirmed : [];
         const hopes = Array.isArray(data.hopes) ? data.hopes : [];
-        console.log("[renderSchedule] スケジュール描画", {
-          confirmed: confirmed.length,
+        const ptRequests = Array.isArray(data.ptRequests) ? data.ptRequests : [];
+        const submission = data.submission || null;
+        console.log("[renderHopes] 希望描画", {
           hopes: hopes.length,
+          ptRequests: ptRequests.length,
         });
-        setMessage(elements.scheduleMessage, "表示しました。", "success");
         const rows = [];
-        confirmed.forEach((item) => {
-          rows.push({
-            date: item.date,
-            title: item.type,
-            store: item.workStoreName || item.workStoreId,
-            time: [item.start, item.end].filter(Boolean).join("-"),
-            kind: "確定",
-          });
-        });
         hopes.forEach((item) => {
           if (item.type === "未入力") return;
           rows.push({
             date: item.date,
             title: item.type,
-            store: "希望",
+            storeId: submission ? submission.storeId : "",
             time: [item.start, item.end].filter(Boolean).join("-"),
-            kind: "希望",
+            kind: "月間希望",
           });
         });
-        rows.sort((a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind));
+        ptRequests.forEach((item) => {
+          rows.push({
+            date: item.date,
+            title: "PT",
+            storeId: item.workStoreId,
+            time: [item.start, item.end].filter(Boolean).join("-"),
+            kind: "PT申請",
+          });
+        });
+        rows.sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.kind.localeCompare(b.kind));
+        elements.hopeList.innerHTML = "";
         if (!rows.length) {
-          elements.scheduleList.innerHTML = '<div class="empty">表示できる希望・確定シフトがありません。</div>';
+          const empty = document.createElement("div");
+          empty.className = "empty";
+          empty.textContent = "この月に提出済みの希望はありません。";
+          elements.hopeList.append(empty);
+          setMessage(elements.hopeMessage, "提出済みの希望は見つかりませんでした。");
           return;
         }
-        elements.scheduleList.innerHTML = rows.map((row) => `
-          <div class="schedule-row">
-            <strong>${row.date}</strong>
-            <span>${row.kind}: ${row.title}</span>
-            <span>${row.store}</span>
-            <span>${row.time || "-"}</span>
-          </div>
-        `).join("");
+        const fragment = document.createDocumentFragment();
+        rows.forEach((row) => {
+          const store = state.stores.find((item) => item.storeId === row.storeId);
+          const values = [
+            { tag: "strong", text: row.date || "-" },
+            { tag: "span", text: `${row.kind}: ${row.title}` },
+            { tag: "span", text: store ? store.storeName : (row.storeId || "-") },
+            { tag: "span", text: row.time || "-" },
+          ];
+          const rowNode = document.createElement("div");
+          rowNode.className = "schedule-row";
+          values.forEach((value) => {
+            const node = document.createElement(value.tag);
+            node.textContent = value.text;
+            rowNode.append(node);
+          });
+          fragment.append(rowNode);
+        });
+        elements.hopeList.append(fragment);
+        setMessage(elements.hopeMessage, "提出済みの希望を表示しました。", "success");
       }
 
       function applyInitialData(data) {
         // GASから取得したマスタ情報を画面の選択肢へ反映する。
         console.log("[applyInitialData] 初期データ反映開始", data);
         data = normalizeInitialData(data);
+        if (!state.session) throw new Error("ログインしている従業員を確認できません。");
+        if (!data.areas.length || !data.stores.length) {
+          throw new Error("エリアまたは店舗マスタが未登録です。DB管理用スプレッドシートを確認してください。");
+        }
         Object.assign(state, {
           areas: data.areas,
           stores: data.stores,
           staff: data.staff,
           staffStoreSettings: data.staffStoreSettings,
         });
-        [elements.area, elements.scheduleArea, elements.ptArea].forEach((select) => fillSelect(select, state.areas, "エリアを選択", "areaId", "areaName"));
-        elements.area.value = state.areas[0] ? state.areas[0].areaId : "";
-        elements.scheduleArea.value = elements.area.value;
-        elements.ptArea.value = elements.area.value;
-        syncStoreOptions(elements.area, elements.store, elements.employee);
-        syncStoreOptions(elements.scheduleArea, elements.scheduleStore, elements.scheduleEmployee);
-        syncStoreOptions(elements.ptArea, elements.ptStore, elements.ptEmployee, true);
+        [elements.area, elements.ptArea].forEach((select) => fillSelect(select, state.areas, "エリアを選択", "areaId", "areaName"));
+        setLocationDefaults(elements.area, elements.store, elements.employee, state.session.primaryAreaId, state.session.primaryStoreId);
+        setLocationDefaults(elements.ptArea, elements.ptStore, elements.ptEmployee, state.session.primaryAreaId, state.session.primaryStoreId, true);
         elements.month.value = getDefaultMonth();
-        elements.scheduleMonth.value = elements.month.value;
-        buildHourOptions(elements.ptStart, "開始");
-        buildHourOptions(elements.ptEnd, "終了");
-        elements.ptStart.value = DEFAULT_START;
-        elements.ptEnd.value = DEFAULT_END;
+        elements.hopeMonth.value = elements.month.value;
+        buildHourOptions(elements.ptStart, "開始", PT_MIN_TIME, PT_MAX_TIME, DEFAULT_START);
+        buildHourOptions(elements.ptEnd, "終了", PT_MIN_TIME, PT_MAX_TIME, DEFAULT_END);
         restoreDraft();
         elements.status.textContent = data.accepting ? "受付中" : "受付停止中";
         console.log("[applyInitialData] 初期データ反映完了", {
@@ -1225,12 +2178,12 @@
       }
 
       function normalizeInitialData(data) {
-        const source = data && Array.isArray(data.areas) && data.areas.length ? data : fallbackData;
+        const source = data || {};
         return {
           accepting: source.accepting !== false,
-          areas: source.areas || [],
-          stores: source.stores || [],
-          staff: source.staff || [],
+          areas: Array.isArray(source.areas) ? source.areas : [],
+          stores: Array.isArray(source.stores) ? source.stores : [],
+          staff: Array.isArray(source.staff) ? source.staff : [],
           staffStoreSettings: (source.staffStoreSettings || []).map((setting) => ({
             ...setting,
             normalDisplay: setting.normalDisplay !== false,
@@ -1244,13 +2197,11 @@
       }
 
       function bootWithFallback(reason) {
-        // GAS外で開いた場合や初期データ取得に失敗した場合の画面確認用起動。
+        // GAS外で開いた場合は認証処理を行えないため、案内だけ表示する。
         console.log("[bootWithFallback] フォールバック起動", { reason });
-        applyInitialData(fallbackData);
-        elements.status.textContent = "画面確認";
-        if (reason) {
-          setMessage(elements.message, reason, "error");
-        }
+        elements.mainApp.classList.add("is-hidden");
+        elements.authView.classList.remove("is-hidden");
+        setAuthMessage(elements.loginMessage, reason || "GASのウェブアプリURLから開いてください。", "error");
       }
 
       function installButtonPressFeedback() {
@@ -1275,6 +2226,21 @@
           document.querySelector(`#${button.dataset.view}`).classList.add("is-active");
         });
       });
+
+      document.querySelectorAll("[data-auth-pane]").forEach((button) => {
+        button.addEventListener("click", () => switchAuthPane(button.dataset.authPane));
+      });
+      elements.loginForm.addEventListener("submit", submitLogin);
+      elements.registrationLookupForm.addEventListener("submit", lookupRegistrationEmployee);
+      elements.registrationForm.addEventListener("submit", submitRegistration);
+      elements.registrationBackButton.addEventListener("click", resetRegistrationVerification);
+      elements.passwordChangeButton.addEventListener("click", openPasswordDialog);
+      elements.passwordChangeForm.addEventListener("submit", submitPasswordChange);
+      elements.passwordChangeCancel.addEventListener("click", closePasswordDialog);
+      elements.passwordDialog.addEventListener("click", (event) => {
+        if (event.target === elements.passwordDialog) closePasswordDialog();
+      });
+      elements.logoutButton.addEventListener("click", logoutCurrentUser);
 
       elements.area.addEventListener("input", () => {
         syncStoreOptions(elements.area, elements.store, elements.employee);
@@ -1301,37 +2267,39 @@
       elements.confirmDialog.addEventListener("click", (event) => {
         if (event.target === elements.confirmDialog) closeConfirm();
       });
+      elements.resultClose.addEventListener("click", closeResultDialog);
+      elements.resultDialog.addEventListener("click", (event) => {
+        if (event.target === elements.resultDialog) closeResultDialog();
+      });
       document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && elements.confirmDialog.classList.contains("is-open")) {
           closeConfirm();
+        }
+        if (event.key === "Escape" && elements.resultDialog.classList.contains("is-open")) {
+          closeResultDialog();
+        }
+        if (event.key === "Escape" && elements.passwordDialog.classList.contains("is-open")) {
+          closePasswordDialog();
         }
       });
       document.querySelector("#prevMonth").addEventListener("click", () => moveMonth(-1));
       document.querySelector("#nextMonth").addEventListener("click", () => moveMonth(1));
       document.querySelectorAll("[data-fill]").forEach((button) => button.addEventListener("click", () => fillAll(button.dataset.fill)));
 
-      elements.scheduleArea.addEventListener("input", () => syncStoreOptions(elements.scheduleArea, elements.scheduleStore, elements.scheduleEmployee));
-      elements.scheduleStore.addEventListener("input", () => syncEmployeeOptions(elements.scheduleStore, elements.scheduleEmployee));
-      document.querySelector("#loadSchedule").addEventListener("click", loadSchedule);
+      document.querySelector("#loadHopes").addEventListener("click", loadHopes);
 
       elements.ptArea.addEventListener("input", () => syncStoreOptions(elements.ptArea, elements.ptStore, elements.ptEmployee, true));
       elements.ptStore.addEventListener("input", () => syncEmployeeOptions(elements.ptStore, elements.ptEmployee, true));
       elements.ptForm.addEventListener("submit", submitPt);
 
       elements.month.value = getDefaultMonth();
-      elements.scheduleMonth.value = elements.month.value;
-      renderCalendar();
+      elements.hopeMonth.value = elements.month.value;
       installButtonPressFeedback();
 
       if (hasGoogleRunner()) {
-        google.script.run
-          .withSuccessHandler(applyInitialData)
-          .withFailureHandler((error) => {
-            bootWithFallback(error.message || "初期データの読込に失敗したため、画面確認モードで表示しています。");
-          })
-          .getInitialData();
+        restoreAuthenticatedSession();
       } else {
-        bootWithFallback("GAS以外で開いているため、画面確認モードで表示しています。");
+        bootWithFallback("GAS以外で開いているためログインできません。デプロイしたウェブアプリURLから開いてください。");
       }
     </script>
   </body>

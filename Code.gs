@@ -8,6 +8,17 @@ const ACCEPTING = true; //シフトを受付中かどうか
 const DEADLINE_DAY = 15; //シフトの締め切り日
 const DEFAULT_START = "11:00"; //デフォの勤務開始時間
 const DEFAULT_END = "20:00"; //デフォの勤務終了時間
+const WORK_MIN_TIME = "11:00";
+const WORK_MAX_TIME = "20:00";
+const PT_MIN_TIME = "07:00";
+const PT_MAX_TIME = "22:00";
+const SESSION_LIFETIME_HOURS = 12;
+const LOGIN_MAX_FAILURES = 5;
+const LOGIN_LOCK_MINUTES = 15;
+const PASSWORD_HASH_ROUNDS = 1200;
+
+// 同じGAS実行内だけで読込結果を共有し、次のリクエストには持ち越さない。
+let requestCache_ = {};
 
 const SHEETS = {
   AREAS: "エリアマスタ",
@@ -19,6 +30,9 @@ const SHEETS = {
   PT_REQUESTS: "PT申請",
   CONFIRMED: "確定シフト",
   CHANGE_LOG: "変更履歴",
+  LOGIN_ACCOUNTS: "ログインアカウント",
+  AUTH_SESSIONS: "ログインセッション",
+  PASSWORD_SUMMARY: "従業員パスワードサマリ",
 }; //スプシ内シート
 
 //
@@ -52,37 +66,217 @@ const HEADERS = {
   [SHEETS.PT_REQUESTS]: ["PT申請ID", "従業員ID", "氏名", "所属店舗ID", "勤務エリアID", "勤務店舗ID", "勤務日", "開始時刻", "終了時刻", "申請日時", "状態", "備考"],
   [SHEETS.CONFIRMED]: ["確定シフトID", "対象月", "日付", "従業員ID", "氏名", "所属エリアID", "所属店舗ID", "勤務エリアID", "勤務店舗ID", "開始時刻", "終了時刻", "区分", "確定元", "確定日時", "確定者ID"],
   [SHEETS.CHANGE_LOG]: ["変更ID", "対象データ種別", "対象ID", "変更前", "変更後", "変更理由", "変更者ID", "変更日時"],
+  [SHEETS.LOGIN_ACCOUNTS]: ["従業員ID", "パスワードハッシュ", "パスワードソルト", "登録日時", "最終ログイン日時", "有効フラグ", "ログイン失敗回数", "ロック期限", "パスワード更新日時"],
+  [SHEETS.AUTH_SESSIONS]: ["トークンハッシュ", "従業員ID", "発行日時", "有効期限", "最終利用日時", "有効フラグ"],
+  [SHEETS.PASSWORD_SUMMARY]: ["従業員ID", "パスワードハッシュ", "更新日時", "有効フラグ"],
 }; //ヘッダー定義
 
 function doGet() {
+  console.log("[doGet] Webアプリを表示します");
   return HtmlService
     .createTemplateFromFile("GasApp")
     .evaluate()
-    .setTitle("月間シフト提出")
+    .setTitle("シフト提出・希望確認")
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-    console.log("ユーザーがWebページを開きました。")
 } //Webページに飛んだ際HTMLファイルを読み込んで画面を表示します
 
 function doPost(e) {
   //submitShift(payload):1か月分のシフト希望を出したときに実行される。
   try {
     const payload = JSON.parse(e.postData.contents);
+    console.log("[doPost] 申請を受信", { kind: payload.kind || "shift" });
     if (payload.kind === "pt") return json(submitPtRequest(payload));
-    return json(submitShift(payload)); 
+    return json(submitShift(payload));
   } catch (error) {
+    console.error("[doPost] 申請処理に失敗", error);
     return json({ ok: false, error: error.message });
-    console.log("シフトもしくはPT申請を送信しました。")
   }
 } //ユーザーがシフト希望を送った際に作動
 
 function authorizeOnce() {
+  resetRequestCache_();
   const spreadsheet = getMasterSpreadsheet();
   setupMasterSheets();
   return `権限確認が完了しました。${spreadsheet.getName()}`;
 }
 
-function getInitialData() {
-  setupMasterSheets();
+/** ログイン済みユーザー向けの初期データを返す。 */
+function getInitialData(authToken) {
+  resetRequestCache_();
+  const auth = authenticateSession_(authToken);
+  return buildInitialData_(auth.staff);
+}
+
+/** 初回登録前に、従業員IDが有効なマスタ情報か確認する。 */
+function lookupEmployeeForRegistration(payload) {
+  resetRequestCache_();
+  ensureAuthSheets_();
+  const employeeId = normalizeKey(payload && payload.employeeId);
+  if (!employeeId) throw new Error("従業員IDを入力してください。");
+
+  const staff = findStaffById_(employeeId);
+  const accountSheet = getSheetWithHeaders(getAuthSpreadsheet_(), SHEETS.LOGIN_ACCOUNTS);
+  const accountRow = findRowByKeys(accountSheet, { 1: staff.employeeId });
+  if (accountRow) {
+    const active = toBoolean(accountSheet.getRange(accountRow, 6).getValue());
+    if (active) throw new Error("この従業員IDは登録済みです。ログイン画面から進んでください。");
+  }
+
+  console.log("[lookupEmployeeForRegistration] 従業員ID確認完了", { employeeId: staff.employeeId });
+  return { ok: true, employee: toPublicStaff_(staff) };
+}
+
+/** 従業員マスタと照合後、初回パスワードを登録する。 */
+function registerAccount(payload) {
+  resetRequestCache_();
+  ensureAuthSheets_();
+  const employeeId = normalizeKey(payload && payload.employeeId);
+  const password = String(payload && payload.password || "");
+  const passwordConfirm = String(payload && payload.passwordConfirm || "");
+  validateNewPassword_(password, passwordConfirm);
+  const staff = findStaffById_(employeeId);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+
+  try {
+    const sheet = getSheetWithHeaders(getAuthSpreadsheet_(), SHEETS.LOGIN_ACCOUNTS);
+    const existingRow = findRowByKeys(sheet, { 1: staff.employeeId });
+    if (existingRow && toBoolean(sheet.getRange(existingRow, 6).getValue())) {
+      throw new Error("この従業員IDは登録済みです。ログイン画面から進んでください。");
+    }
+
+    const salt = createRandomSecret_();
+    const passwordHash = hashPassword_(password, salt);
+    const now = new Date();
+    const values = [
+      staff.employeeId,
+      passwordHash,
+      salt,
+      now,
+      now,
+      true,
+      0,
+      "",
+      now,
+    ];
+    writeRow(sheet, existingRow, values);
+    trySyncPasswordSummaryForAccount_(staff.employeeId, passwordHash, true, now);
+  } finally {
+    lock.releaseLock();
+  }
+
+  const session = createSession_(staff);
+  console.log("[registerAccount] 初回登録完了", { employeeId: staff.employeeId });
+  return buildAuthResponse_(staff, session);
+}
+
+/** 登録済みパスワードを照合してログインする。 */
+function login(payload) {
+  resetRequestCache_();
+  ensureAuthSheets_();
+  const employeeId = normalizeKey(payload && payload.employeeId);
+  const password = String(payload && payload.password || "");
+  if (!employeeId || !password) throw new Error("従業員IDとパスワードを入力してください。");
+
+  const staff = findStaffById_(employeeId);
+  const sheet = getSheetWithHeaders(getAuthSpreadsheet_(), SHEETS.LOGIN_ACCOUNTS);
+  const row = findRowByKeys(sheet, { 1: staff.employeeId });
+  if (!row || !toBoolean(sheet.getRange(row, 6).getValue())) {
+    throw new Error("パスワードが未登録です。初めての方から登録してください。");
+  }
+
+  const values = sheet.getRange(row, 1, 1, HEADERS[SHEETS.LOGIN_ACCOUNTS].length).getValues()[0];
+  const lockUntil = toDate_(values[7]);
+  if (lockUntil && lockUntil.getTime() > Date.now()) {
+    const minutes = Math.max(1, Math.ceil((lockUntil.getTime() - Date.now()) / 60000));
+    throw new Error(`ログインが一時停止されています。${minutes}分後にもう一度お試しください。`);
+  }
+
+  const matched = timingSafeEqual_(hashPassword_(password, String(values[2] || "")), String(values[1] || ""));
+  if (!matched) {
+    const failures = Number(values[6]) + 1;
+    const shouldLock = failures >= LOGIN_MAX_FAILURES;
+    const nextLockUntil = shouldLock ? new Date(Date.now() + LOGIN_LOCK_MINUTES * 60000) : "";
+    sheet.getRange(row, 7, 1, 2).setValues([[shouldLock ? 0 : failures, nextLockUntil]]);
+    console.warn("[login] パスワード不一致", { employeeId: staff.employeeId, failures });
+    if (shouldLock) throw new Error(`入力を${LOGIN_MAX_FAILURES}回確認できなかったため、${LOGIN_LOCK_MINUTES}分間ログインを停止しました。`);
+    throw new Error("従業員IDまたはパスワードが正しくありません。");
+  }
+
+  sheet.getRange(row, 5).setValue(new Date());
+  sheet.getRange(row, 7, 1, 2).setValues([[0, ""]]);
+  const session = createSession_(staff);
+  console.log("[login] ログイン成功", { employeeId: staff.employeeId });
+  return buildAuthResponse_(staff, session);
+}
+
+/** ログイン中の本人だけが現在のパスワードを使って変更できる。 */
+function changePassword(payload) {
+  resetRequestCache_();
+  const auth = authenticateSession_(payload && payload.authToken);
+  const currentPassword = String(payload && payload.currentPassword || "");
+  const newPassword = String(payload && payload.newPassword || "");
+  const passwordConfirm = String(payload && payload.passwordConfirm || "");
+  if (!currentPassword) throw new Error("現在のパスワードを入力してください。");
+  validateNewPassword_(newPassword, passwordConfirm);
+  if (currentPassword === newPassword) throw new Error("現在とは異なるパスワードを入力してください。");
+
+  const staff = auth.staff;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getSheetWithHeaders(getAuthSpreadsheet_(), SHEETS.LOGIN_ACCOUNTS);
+    const row = findRowByKeys(sheet, { 1: staff.employeeId });
+    if (!row || !toBoolean(sheet.getRange(row, 6).getValue())) {
+      throw new Error("ログインアカウントが見つかりません。管理者へ確認してください。");
+    }
+
+    const values = sheet.getRange(row, 1, 1, HEADERS[SHEETS.LOGIN_ACCOUNTS].length).getValues()[0];
+    const currentMatched = timingSafeEqual_(
+      hashPassword_(currentPassword, String(values[2] || "")),
+      String(values[1] || "")
+    );
+    if (!currentMatched) throw new Error("現在のパスワードが正しくありません。");
+
+    const salt = createRandomSecret_();
+    const passwordHash = hashPassword_(newPassword, salt);
+    const now = new Date();
+    sheet.getRange(row, 2, 1, 2).setValues([[passwordHash, salt]]);
+    sheet.getRange(row, 7, 1, 3).setValues([[0, "", now]]);
+    trySyncPasswordSummaryForAccount_(staff.employeeId, passwordHash, true, now);
+  } finally {
+    lock.releaseLock();
+  }
+
+  const session = createSession_(staff);
+  console.log("[changePassword] パスワード変更完了", { employeeId: staff.employeeId });
+  return { ok: true, session: buildSessionPayload_(staff, session) };
+}
+
+/** 保存済みトークンからログイン状態を復元する。 */
+function getSessionData(authToken) {
+  resetRequestCache_();
+  const auth = authenticateSession_(authToken);
+  console.log("[getSessionData] セッション復元", { employeeId: auth.staff.employeeId });
+  return buildAuthResponse_(auth.staff, {
+    token: authToken,
+    expiresAt: auth.expiresAt,
+  });
+}
+
+/** 現在のセッションを無効化する。 */
+function logout(authToken) {
+  resetRequestCache_();
+  if (!authToken) return { ok: true };
+  const sheet = getSheetWithHeaders(getAuthSpreadsheet_(), SHEETS.AUTH_SESSIONS);
+  const row = findRowByKeys(sheet, { 1: hashSessionToken_(authToken) });
+  if (row) sheet.getRange(row, 6).setValue(false);
+  console.log("[logout] ログアウト完了");
+  return { ok: true };
+}
+
+function buildInitialData_(staff) {
+  const settings = getStaffStoreSettings().filter((setting) => setting.employeeId === staff.employeeId);
   return {
     ok: true,
     accepting: ACCEPTING,
@@ -91,15 +285,261 @@ function getInitialData() {
     defaultEnd: DEFAULT_END,
     areas: getAreas(),
     stores: getStores(),
-    staff: getStaff(),
-    staffStoreSettings: getStaffStoreSettings(),
+    staff: [toPublicStaff_(staff)],
+    staffStoreSettings: settings,
     shiftTypes: ["未入力", "勤務可能", "休み希望", "有給希望", "PT"],
   };
 }
 
+function buildAuthResponse_(staff, session) {
+  return {
+    ok: true,
+    session: buildSessionPayload_(staff, session),
+    initialData: buildInitialData_(staff),
+  };
+}
+
+function buildSessionPayload_(staff, session) {
+  return {
+    authToken: session.token,
+    expiresAt: toIsoString_(session.expiresAt),
+    employeeId: staff.employeeId,
+    name: staff.name,
+    primaryAreaId: staff.primaryAreaId,
+    primaryStoreId: staff.primaryStoreId,
+    role: staff.role,
+    permission: staff.permission,
+  };
+}
+
+function ensureAuthSheets_() {
+  const authSpreadsheet = getAuthSpreadsheet_();
+  const accountSheet = getSheetWithHeaders(authSpreadsheet, SHEETS.LOGIN_ACCOUNTS);
+  getSheetWithHeaders(authSpreadsheet, SHEETS.AUTH_SESSIONS);
+  if (accountSheet.getLastRow() < 2) {
+    const migrated = migrateLegacyAuthAccounts_(getDbSpreadsheet(), authSpreadsheet);
+    if (migrated > 0) syncPasswordSummary_();
+  }
+}
+
+/** 旧DB管理用ファイルのアカウントだけを提出ログ用ファイルへ移す。セッションは再利用しない。 */
+function migrateLegacyAuthAccounts_(legacySpreadsheet, authSpreadsheet) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const source = legacySpreadsheet.getSheetByName(SHEETS.LOGIN_ACCOUNTS);
+    if (!source || source.getLastRow() < 2) return 0;
+
+    const target = getSheetWithHeaders(authSpreadsheet, SHEETS.LOGIN_ACCOUNTS);
+    const headers = HEADERS[SHEETS.LOGIN_ACCOUNTS];
+    const existingKeys = new Set(
+      target.getLastRow() < 2
+        ? []
+        : target.getRange(2, 1, target.getLastRow() - 1, 1).getValues().flat().map(normalizeKey).filter(Boolean)
+    );
+    const values = readObjects(source)
+      .filter((row) => {
+        const key = normalizeKey(row[headers[0]]);
+        if (!key || existingKeys.has(key)) return false;
+        existingKeys.add(key);
+        return true;
+      })
+      .map((row) => headers.map((header) => row[header] === undefined ? "" : row[header]));
+
+    if (values.length) {
+      target.getRange(target.getLastRow() + 1, 1, values.length, headers.length).setValues(values);
+      console.log("[migrateLegacyAuthAccounts_] 旧認証アカウントを移行", { migrated: values.length });
+    }
+    return values.length;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** 管理者用ファイルのパスワードサマリを認証アカウントから再作成する。 */
+function rebuildPasswordSummary() {
+  resetRequestCache_();
+  ensureAuthSheets_();
+  const count = syncPasswordSummary_();
+  return `${count}件の従業員パスワードサマリを再作成しました。`;
+}
+
+function syncPasswordSummary_() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const accountSheet = getSheetWithHeaders(getAuthSpreadsheet_(), SHEETS.LOGIN_ACCOUNTS);
+    const summarySheet = getSheetWithHeaders(getDbSpreadsheet(), SHEETS.PASSWORD_SUMMARY);
+    const values = readObjects(accountSheet)
+      .filter((row) => normalizeKey(row["従業員ID"]) && normalizeKey(row["パスワードハッシュ"]))
+      .map((row) => [
+        normalizeKey(row["従業員ID"]),
+        normalizeKey(row["パスワードハッシュ"]),
+        row["パスワード更新日時"] || row["登録日時"] || new Date(),
+        toBoolean(row["有効フラグ"]),
+      ]);
+
+    if (summarySheet.getLastRow() > 1) {
+      summarySheet.getRange(2, 1, summarySheet.getLastRow() - 1, HEADERS[SHEETS.PASSWORD_SUMMARY].length).clearContent();
+    }
+    if (values.length) summarySheet.getRange(2, 1, values.length, values[0].length).setValues(values);
+    return values.length;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function syncPasswordSummaryForAccount_(employeeId, passwordHash, active, updatedAt) {
+  const sheet = getSheetWithHeaders(getDbSpreadsheet(), SHEETS.PASSWORD_SUMMARY);
+  const row = findRowByKeys(sheet, { 1: employeeId });
+  writeRow(sheet, row, [employeeId, passwordHash, updatedAt || new Date(), active !== false]);
+}
+
+/** サマリは派生データのため、同期失敗で登録・変更済みパスワードを失敗扱いにしない。 */
+function trySyncPasswordSummaryForAccount_(employeeId, passwordHash, active, updatedAt) {
+  try {
+    syncPasswordSummaryForAccount_(employeeId, passwordHash, active, updatedAt);
+    return true;
+  } catch (error) {
+    console.error("[trySyncPasswordSummaryForAccount_] パスワードサマリ同期失敗", {
+      employeeId,
+      message: error.message,
+    });
+    return false;
+  }
+}
+
+function findStaffById_(employeeId) {
+  const key = normalizeKey(employeeId);
+  if (!key) throw new Error("従業員IDを入力してください。");
+  const staff = getStaff().find((item) => normalizeKey(item.employeeId) === key);
+  if (!staff) throw new Error("従業員IDが従業員マスタに見つかりません。管理者へ確認してください。");
+  return staff;
+}
+
+function toPublicStaff_(staff) {
+  return {
+    employeeId: staff.employeeId,
+    name: staff.name,
+    primaryAreaId: staff.primaryAreaId,
+    primaryStoreId: staff.primaryStoreId,
+    employmentType: staff.employmentType,
+    role: staff.role,
+    permission: staff.permission,
+    order: staff.order,
+    active: staff.active,
+  };
+}
+
+function validateNewPassword_(password, passwordConfirm) {
+  if (!password) throw new Error("パスワードを入力してください。");
+  if (password.length < 8) throw new Error("パスワードは8文字以上で入力してください。");
+  if (password.length > 72) throw new Error("パスワードは72文字以内で入力してください。");
+  if (password !== passwordConfirm) throw new Error("確認用パスワードが一致しません。もう一度入力してください。");
+}
+
+function createSession_(staff) {
+  const token = `${createRandomSecret_()}${createRandomSecret_()}`;
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + SESSION_LIFETIME_HOURS * 60 * 60 * 1000);
+  const sheet = getSheetWithHeaders(getAuthSpreadsheet_(), SHEETS.AUTH_SESSIONS);
+  const row = findRowByKeys(sheet, { 2: staff.employeeId });
+  writeRow(sheet, row, [
+    hashSessionToken_(token),
+    staff.employeeId,
+    now,
+    expiresAt,
+    now,
+    true,
+  ]);
+  return { token, expiresAt };
+}
+
+function authenticateSession_(authToken) {
+  const token = normalizeKey(authToken);
+  if (!token) throw new Error("ログインが必要です。もう一度ログインしてください。");
+
+  ensureAuthSheets_();
+  const sheet = getSheetWithHeaders(getAuthSpreadsheet_(), SHEETS.AUTH_SESSIONS);
+  const row = findRowByKeys(sheet, { 1: hashSessionToken_(token) });
+  if (!row) throw new Error("ログイン情報を確認できません。もう一度ログインしてください。");
+
+  const values = sheet.getRange(row, 1, 1, HEADERS[SHEETS.AUTH_SESSIONS].length).getValues()[0];
+  const expiresAt = toDate_(values[3]);
+  if (!toBoolean(values[5]) || !expiresAt || expiresAt.getTime() <= Date.now()) {
+    sheet.getRange(row, 6).setValue(false);
+    throw new Error("ログインの有効期限が切れました。もう一度ログインしてください。");
+  }
+
+  const lastUsedAt = toDate_(values[4]);
+  if (!lastUsedAt || Date.now() - lastUsedAt.getTime() > 10 * 60 * 1000) {
+    sheet.getRange(row, 5).setValue(new Date());
+  }
+
+  return {
+    staff: findStaffById_(values[1]),
+    expiresAt,
+  };
+}
+
+function createRandomSecret_() {
+  return Utilities.getUuid().replace(/-/g, "");
+}
+
+function hashPassword_(password, salt) {
+  let value = `${salt}\u0000${password}`;
+  for (let round = 0; round < PASSWORD_HASH_ROUNDS; round++) {
+    value = digestText_(`${salt}\u0000${value}`);
+  }
+  return value;
+}
+
+function hashSessionToken_(token) {
+  return digestText_(String(token || ""));
+}
+
+function digestText_(value) {
+  const digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(value),
+    Utilities.Charset.UTF_8
+  );
+  return Utilities.base64EncodeWebSafe(digest).replace(/=+$/g, "");
+}
+
+function timingSafeEqual_(left, right) {
+  const a = String(left || "");
+  const b = String(right || "");
+  const length = Math.max(a.length, b.length);
+  let different = a.length ^ b.length;
+  for (let index = 0; index < length; index++) {
+    different |= (a.charCodeAt(index) || 0) ^ (b.charCodeAt(index) || 0);
+  }
+  return different === 0;
+}
+
+function toDate_(value) {
+  if (Object.prototype.toString.call(value) === "[object Date]" && !Number.isNaN(value.getTime())) return value;
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function toIsoString_(value) {
+  const date = toDate_(value);
+  return date ? date.toISOString() : "";
+}
+
+function validateStoreArea_(store, area) {
+  if (normalizeKey(store.areaId) !== normalizeKey(area.areaId)) {
+    throw new Error("選択した店舗は、このエリアに所属していません。エリアと店舗を選び直してください。");
+  }
+}
+
 function submitShift(payload) {
+  resetRequestCache_();
   if (!ACCEPTING) throw new Error("現在、シフト提出の受付は停止中です。");
-  setupMasterSheets();
+  const auth = authenticateSession_(payload && payload.authToken);
   validateShiftPayload(payload);  
   
   //validateShiftPayload:受付期間中チェックし送信されたデータの不備を検証。
@@ -107,14 +547,16 @@ function submitShift(payload) {
   const logSpreadsheet = getSubmissionLogSpreadsheet();
   const overallSpreadsheet = getOverallSpreadsheet();
   const sheet = getSheetWithHeaders(logSpreadsheet, SHEETS.SUBMISSIONS);
-  const staff = findStaff(payload.employeeId, payload.name);
+  const staff = auth.staff;
   const store = findStore(payload.storeId || staff.primaryStoreId);
   const area = findArea(payload.areaId || store.areaId);
+  validateStoreArea_(store, area);
   const month = normalizeMonthValue(payload.month);
   const shifts = normalizeShifts(payload.shifts);
   const summary = summarize(shifts);
   const hopeId = makeSubmissionId(month, staff.employeeId);
   const row = findRowByKeys(sheet, { 1: hopeId });
+  const previousAreaId = row ? normalizeKey(sheet.getRange(row, 5).getValue()) : "";
   const values = [
     hopeId,
     month,
@@ -136,22 +578,24 @@ function submitShift(payload) {
 
   writeRow(sheet, row, values);
   SpreadsheetApp.flush();
-  rebuildMonthViews(overallSpreadsheet, month);
+  rebuildMonthViews(overallSpreadsheet, month, [area.areaId, previousAreaId]);
   SpreadsheetApp.flush();
 
   return { ok: true, updated: Boolean(row), month, hopeId };
 }
 
 function submitPtRequest(payload) {
-  setupMasterSheets();
+  resetRequestCache_();
+  const auth = authenticateSession_(payload && payload.authToken);
   validatePtPayload(payload);
 
   const logSpreadsheet = getSubmissionLogSpreadsheet();
   const overallSpreadsheet = getOverallSpreadsheet();
   const ptSheet = getSheetWithHeaders(logSpreadsheet, SHEETS.PT_REQUESTS);
-  const staff = findStaff(payload.employeeId, payload.name);
+  const staff = auth.staff;
   const workStore = findStore(payload.workStoreId || payload.storeId || staff.primaryStoreId);
   const workArea = findArea(payload.workAreaId || workStore.areaId);
+  validateStoreArea_(workStore, workArea);
   const workDate = normalizeDateValue(payload.date);
   const start = normalizeTime(payload.start || DEFAULT_START);
   const end = normalizeTime(payload.end || DEFAULT_END);
@@ -190,32 +634,68 @@ function submitPtRequest(payload) {
   };
   upsertConfirmedShift(overallSpreadsheet, confirmed);
   appendChangeLog(overallSpreadsheet, "PT申請", requestId, "", JSON.stringify(confirmed), "PT自動確定", staff.employeeId);
-  rebuildMonthViews(overallSpreadsheet, confirmed.month);
+  rebuildMonthViews(overallSpreadsheet, confirmed.month, [workArea.areaId]);
 
   return { ok: true, status, requestId, confirmed };
 }
 
-function getMySchedule(query) {
-  setupMasterSheets();
-  const employee = findStaff(query.employeeId, query.name);
-  const month = normalizeMonthValue(query.month);
-  const overallSpreadsheet = getOverallSpreadsheet();
+/** ログイン中の本人が提出した月間希望とPT申請だけを返す。 */
+function getMyShiftHopes(query) {
+  resetRequestCache_();
+  const auth = authenticateSession_(query && query.authToken);
+  const employee = auth.staff;
+  const month = normalizeMonthValue(query && query.month);
+  if (!month) throw new Error("対象月を選択してください。");
+
   const logSpreadsheet = getSubmissionLogSpreadsheet();
-  const confirmedRows = readObjects(getSheetWithHeaders(overallSpreadsheet, SHEETS.CONFIRMED))
-    .filter((row) => row["従業員ID"] === employee.employeeId && normalizeMonthValue(row["対象月"]) === month);
   const hopeRows = readObjects(getSheetWithHeaders(logSpreadsheet, SHEETS.SUBMISSIONS))
-    .filter((row) => row["従業員ID"] === employee.employeeId && normalizeMonthValue(row["対象月"]) === month);
+    .filter((row) => (
+      normalizeKey(row["従業員ID"]) === employee.employeeId &&
+      normalizeMonthValue(row["対象月"]) === month
+    ));
+  const ptRows = readObjects(getSheetWithHeaders(logSpreadsheet, SHEETS.PT_REQUESTS))
+    .filter((row) => (
+      normalizeKey(row["従業員ID"]) === employee.employeeId &&
+      normalizeDateValue(row["勤務日"]).slice(0, 7) === month
+    ));
+  const hopeRow = hopeRows[0] || null;
+
+  console.log("[getMyShiftHopes] 本人の提出希望を取得", {
+    employeeId: employee.employeeId,
+    month,
+    hasSubmission: Boolean(hopeRow),
+    ptRequests: ptRows.length,
+  });
 
   return {
     ok: true,
-    employee,
+    employee: toPublicStaff_(employee),
     month,
-    confirmed: confirmedRows.map(normalizeConfirmedObject),
-    hopes: hopeRows.length ? safeJsonParse(hopeRows[0]["希望JSON"], []) : [],
+    submission: hopeRow ? {
+      hopeId: normalizeKey(hopeRow["希望ID"]),
+      submittedAt: toIsoString_(hopeRow["提出日時"]),
+      status: normalizeKey(hopeRow["提出状態"]),
+      areaId: normalizeKey(hopeRow["所属エリアID"]),
+      storeId: normalizeKey(hopeRow["所属店舗ID"]),
+      notes: normalizeKey(hopeRow["備考"]),
+    } : null,
+    hopes: hopeRow ? normalizeShifts(safeJsonParse(hopeRow["希望JSON"], [])) : [],
+    ptRequests: ptRows.map((row) => ({
+      requestId: normalizeKey(row["PT申請ID"]),
+      date: normalizeDateValue(row["勤務日"]),
+      workAreaId: normalizeKey(row["勤務エリアID"]),
+      workStoreId: normalizeKey(row["勤務店舗ID"]),
+      start: normalizeTime(row["開始時刻"]),
+      end: normalizeTime(row["終了時刻"]),
+      submittedAt: toIsoString_(row["申請日時"]),
+      status: normalizeKey(row["状態"]),
+      notes: normalizeKey(row["備考"]),
+    })),
   };
 }
 
 function confirmActiveSheet() {
+  resetRequestCache_();
   const activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const activeSheet = activeSpreadsheet.getActiveSheet();
   const month = detectMonthFromSheetName(activeSheet.getName()) || detectMonthFromMatrix(activeSheet) || normalizeMonthValue(new Date());
@@ -230,7 +710,7 @@ function confirmActiveSheet() {
 }
 
 function confirmMatrixSheet(options) {
-  setupMasterSheets();
+  resetRequestCache_();
   const master = getMasterSpreadsheet();
   const sourceSpreadsheetId = options.sourceSpreadsheetId || getManagedSpreadsheetId_("エリア確認", AREA_SPREADSHEET_ID, options.areaId);
   const sourceSpreadsheet = SpreadsheetApp.openById(sourceSpreadsheetId);
@@ -244,11 +724,12 @@ function confirmMatrixSheet(options) {
 
   filtered.forEach((item) => upsertConfirmedShift(master, item));
   appendChangeLog(master, "確定シフト", `${sourceSpreadsheetId}:${options.sourceSheetName}`, "", JSON.stringify(filtered), "シート確定ボタン", options.confirmerId);
-  rebuildMonthViews(master, options.month);
+  rebuildMonthViews(master, options.month, options.areaId ? [options.areaId] : null);
   return `${filtered.length}件の確定シフトを反映しました。`;
 }
 
 function setupMasterSheets() {
+  resetRequestCache_();
   console.log("[setupMasterSheets] 4ファイル構成のシート/ヘッダー確認開始");
   const overall = getOverallSpreadsheet();
   const db = getDbSpreadsheet();
@@ -256,15 +737,27 @@ function setupMasterSheets() {
   const log = getSubmissionLogSpreadsheet();
 
   [SHEETS.CONFIRMED, SHEETS.CHANGE_LOG].forEach((sheetName) => getSheetWithHeaders(overall, sheetName));
-  [SHEETS.AREAS, SHEETS.STORES, SHEETS.STAFF, SHEETS.STAFF_STORES, SHEETS.FILES].forEach((sheetName) => getSheetWithHeaders(db, sheetName));
-  [SHEETS.SUBMISSIONS, SHEETS.PT_REQUESTS].forEach((sheetName) => getSheetWithHeaders(log, sheetName));
+  [
+    SHEETS.AREAS,
+    SHEETS.STORES,
+    SHEETS.STAFF,
+    SHEETS.STAFF_STORES,
+    SHEETS.FILES,
+    SHEETS.PASSWORD_SUMMARY,
+  ].forEach((sheetName) => getSheetWithHeaders(db, sheetName));
+  [SHEETS.SUBMISSIONS, SHEETS.PT_REQUESTS, SHEETS.LOGIN_ACCOUNTS, SHEETS.AUTH_SESSIONS]
+    .forEach((sheetName) => getSheetWithHeaders(log, sheetName));
   getSheetWithHeaders(area, SHEETS.FILES);
 
-  console.log("[setupMasterSheets] 4ファイル構成のシート/ヘッダー確認完了");
+  const migrated = migrateLegacyAuthAccounts_(db, log);
+  const summaryCount = syncPasswordSummary_();
+
+  console.log("[setupMasterSheets] 4ファイル構成のシート/ヘッダー確認完了", { migrated, summaryCount });
   return true;
 }
 
 function rebuildLatestMonthView() {
+  resetRequestCache_();
   const logSpreadsheet = getSubmissionLogSpreadsheet();
   const submissions = readObjects(getSheetWithHeaders(logSpreadsheet, SHEETS.SUBMISSIONS));
   const months = submissions.map((row) => normalizeMonthValue(row["対象月"])).filter(Boolean);
@@ -274,13 +767,17 @@ function rebuildLatestMonthView() {
   return `${latestMonth} の全体/エリアシートを再作成しました。`;
 }
 
-function rebuildMonthViews(spreadsheet, month) {
+function rebuildMonthViews(spreadsheet, month, targetAreaIds) {
   const normalizedMonth = normalizeMonthValue(month);
   const records = getMonthRecords(spreadsheet, normalizedMonth);
   const overallSpreadsheet = getOverallSpreadsheet();
   const areaSpreadsheet = getAreaSpreadsheet();
   writeMatrixSheet(overallSpreadsheet, `全体_${normalizedMonth}`, records, normalizedMonth, "全体", null);
-  getAreas().forEach((area) => {
+  const requestedAreaIds = new Set((targetAreaIds || []).map(normalizeKey).filter(Boolean));
+  const targetAreas = requestedAreaIds.size
+    ? getAreas().filter((area) => requestedAreaIds.has(area.areaId))
+    : getAreas();
+  targetAreas.forEach((area) => {
     const areaRecords = records.filter((record) => record.homeAreaId === area.areaId || record.storeAreaId === area.areaId);
     writeMatrixSheet(areaSpreadsheet, `エリア_${area.areaId}_${normalizedMonth}`, areaRecords, normalizedMonth, area.areaName, area.areaId);
   });
@@ -486,24 +983,71 @@ function upsertConfirmedShift(spreadsheet, item) {
 }
 
 function validateShiftPayload(payload) {
-  if (!(payload.employeeId || payload.name)) throw new Error("名前を選択してください。");
+  if (!payload) throw new Error("送信データを確認できません。");
   if (!payload.storeId) throw new Error("店舗を選択してください。");
   if (!payload.areaId) throw new Error("エリアを選択してください。");
   if (!payload.month) throw new Error("対象月を選択してください。");
   if (!Array.isArray(payload.shifts) || payload.shifts.length === 0) throw new Error("月間シフトを入力してください。");
   const requested = payload.shifts.filter((shift) => normalizeShiftType(shift.type) !== "未入力");
   if (!requested.length) throw new Error("勤務可能・休み希望・有給希望・PTのどれかを1日以上入力してください。");
+  requested.forEach((shift) => {
+    const type = normalizeShiftType(shift.type);
+    const date = normalizeDateValue(shift.date);
+    if (type === "勤務可能") {
+      validateTimeRange_(shift.start, shift.end, WORK_MIN_TIME, WORK_MAX_TIME, "勤務可能", date);
+    }
+    if (type === "PT") {
+      validateTimeRange_(shift.start, shift.end, PT_MIN_TIME, PT_MAX_TIME, "PT", date);
+    }
+  });
 }
 
 function validatePtPayload(payload) {
-  if (!(payload.employeeId || payload.name)) throw new Error("名前を選択してください。");
+  if (!payload) throw new Error("送信データを確認できません。");
+  if (!(payload.workAreaId || payload.areaId)) throw new Error("エリアを選択してください。");
+  if (!(payload.workStoreId || payload.storeId)) throw new Error("店舗を選択してください。");
   if (!payload.date) throw new Error("PT申請日を選択してください。");
+  validateTimeRange_(payload.start, payload.end, PT_MIN_TIME, PT_MAX_TIME, "PT", normalizeDateValue(payload.date));
   const workDate = new Date(`${normalizeDateValue(payload.date)}T00:00:00`);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
   if (workDate < tomorrow) throw new Error("PT申請は前日までに行ってください。");
+}
+
+function validateTimeRange_(startValue, endValue, minTime, maxTime, label, date) {
+  const rawStart = normalizeKey(startValue);
+  const rawEnd = normalizeKey(endValue);
+  const context = `${date ? `${date}の` : ""}${label}`;
+  if (!rawStart || !rawEnd) throw new Error(`${context}は開始時間と終了時間を選択してください。`);
+  if (!/^\d{1,2}:\d{2}$/.test(rawStart) || !/^\d{1,2}:\d{2}$/.test(rawEnd)) {
+    throw new Error(`${context}の時間形式を確認してください。`);
+  }
+
+  const startMinutes = timeToMinutes_(rawStart);
+  const endMinutes = timeToMinutes_(rawEnd);
+  const minMinutes = timeToMinutes_(minTime);
+  const maxMinutes = timeToMinutes_(maxTime);
+  if (startMinutes === null || endMinutes === null) {
+    throw new Error(`${context}の時間形式を確認してください。`);
+  }
+  if (startMinutes < minMinutes || startMinutes > maxMinutes || endMinutes < minMinutes || endMinutes > maxMinutes) {
+    throw new Error(`${context}は${minTime}〜${maxTime}の範囲で指定してください。`);
+  }
+  if (startMinutes >= endMinutes) {
+    throw new Error(`${context}の開始時間は終了時間より前にしてください。`);
+  }
+}
+
+function timeToMinutes_(value) {
+  const time = normalizeTime(value);
+  const match = time.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 24 || minute > 59 || (hour === 24 && minute !== 0)) return null;
+  return hour * 60 + minute;
 }
 
 function summarize(shifts) {
@@ -602,50 +1146,69 @@ function canHelpInArea(employeeId, areaId) {
   ));
 }
 
+function resetRequestCache_() {
+  requestCache_ = {};
+}
+
+function memoizeRequest_(key, loader) {
+  if (!Object.prototype.hasOwnProperty.call(requestCache_, key)) {
+    requestCache_[key] = loader();
+  }
+  return requestCache_[key];
+}
+
 function getAreas() {
-  return readObjects(getSheetWithHeaders(getDbSpreadsheet(), SHEETS.AREAS)).map((row) => ({
-    areaId: row["エリアID"],
-    areaName: row["エリア名"],
-    order: Number(row["表示順"]) || 0,
-    active: toBoolean(row["有効フラグ"]),
-  })).filter((row) => row.active).sort((a, b) => a.order - b.order);
+  return memoizeRequest_("master:areas", () => (
+    readObjects(getSheetWithHeaders(getDbSpreadsheet(), SHEETS.AREAS)).map((row) => ({
+      areaId: row["エリアID"],
+      areaName: row["エリア名"],
+      order: Number(row["表示順"]) || 0,
+      active: toBoolean(row["有効フラグ"]),
+    })).filter((row) => row.active).sort((a, b) => a.order - b.order)
+  ));
 }
 
 function getStores() {
-  return readObjects(getSheetWithHeaders(getDbSpreadsheet(), SHEETS.STORES)).map((row) => ({
-    storeId: row["店舗ID"],
-    storeName: row["店舗名"],
-    shortName: row["短縮名"],
-    areaId: row["エリアID"],
-    order: Number(row["表示順"]) || 0,
-    active: toBoolean(row["有効フラグ"]),
-  })).filter((row) => row.active).sort((a, b) => a.order - b.order);
+  return memoizeRequest_("master:stores", () => (
+    readObjects(getSheetWithHeaders(getDbSpreadsheet(), SHEETS.STORES)).map((row) => ({
+      storeId: row["店舗ID"],
+      storeName: row["店舗名"],
+      shortName: row["短縮名"],
+      areaId: row["エリアID"],
+      order: Number(row["表示順"]) || 0,
+      active: toBoolean(row["有効フラグ"]),
+    })).filter((row) => row.active).sort((a, b) => a.order - b.order)
+  ));
 }
 
 function getStaff() {
-  return readObjects(getSheetWithHeaders(getDbSpreadsheet(), SHEETS.STAFF)).map((row) => ({
-    employeeId: row["従業員ID"],
-    name: row["氏名"],
-    primaryAreaId: row["主所属エリアID"],
-    primaryStoreId: row["主所属店舗ID"],
-    employmentType: row["雇用区分"],
-    role: row["役職"],
-    permission: row["権限"],
-    order: Number(row["表示順"]) || 0,
-    active: toBoolean(row["有効フラグ"]),
-  })).filter((row) => row.active).sort((a, b) => a.order - b.order);
+  return memoizeRequest_("master:staff", () => (
+    readObjects(getSheetWithHeaders(getDbSpreadsheet(), SHEETS.STAFF)).map((row) => ({
+      employeeId: row["従業員ID"],
+      name: row["氏名"],
+      primaryAreaId: row["主所属エリアID"],
+      primaryStoreId: row["主所属店舗ID"],
+      employmentType: row["雇用区分"],
+      role: row["役職"],
+      permission: row["権限"],
+      order: Number(row["表示順"]) || 0,
+      active: toBoolean(row["有効フラグ"]),
+    })).filter((row) => row.active).sort((a, b) => a.order - b.order)
+  ));
 }
 
 function getStaffStoreSettings() {
-  return readObjects(getSheetWithHeaders(getDbSpreadsheet(), SHEETS.STAFF_STORES)).map((row) => ({
-    employeeId: row["従業員ID"],
-    areaId: row["エリアID"],
-    storeId: row["店舗ID"],
-    relation: row["関係区分"],
-    normalDisplay: toBoolean(row["通常表示"]),
-    helpCandidate: toBoolean(row["ヘルプ候補表示"]),
-    active: toBoolean(row["有効フラグ"]),
-  })).filter((row) => row.active);
+  return memoizeRequest_("master:staff-store-settings", () => (
+    readObjects(getSheetWithHeaders(getDbSpreadsheet(), SHEETS.STAFF_STORES)).map((row) => ({
+      employeeId: row["従業員ID"],
+      areaId: row["エリアID"],
+      storeId: row["店舗ID"],
+      relation: row["関係区分"],
+      normalDisplay: toBoolean(row["通常表示"]),
+      helpCandidate: toBoolean(row["ヘルプ候補表示"]),
+      active: toBoolean(row["有効フラグ"]),
+    })).filter((row) => row.active)
+  ));
 }
 
 function findStaff(employeeId, name) {
@@ -688,21 +1251,29 @@ function getMasterSpreadsheet() {
 }
 
 function getDbSpreadsheet() {
-  return SpreadsheetApp.openById(ADMIN_SPREADSHEET_ID);
+  return memoizeRequest_("spreadsheet:db", () => SpreadsheetApp.openById(ADMIN_SPREADSHEET_ID));
 }
 
 function getAreaSpreadsheet() {
-  return SpreadsheetApp.openById(getManagedSpreadsheetId_("エリア確認", AREA_SPREADSHEET_ID));
+  return memoizeRequest_("spreadsheet:area", () => (
+    SpreadsheetApp.openById(getManagedSpreadsheetId_("エリア確認", AREA_SPREADSHEET_ID))
+  ));
 }
 
 function getSubmissionLogSpreadsheet() {
-  return SpreadsheetApp.openById(getManagedSpreadsheetId_("提出ログ", SUBMISSION_LOG_SPREADSHEET_ID));
+  return memoizeRequest_("spreadsheet:submission-log", () => (
+    SpreadsheetApp.openById(getManagedSpreadsheetId_("提出ログ", SUBMISSION_LOG_SPREADSHEET_ID))
+  ));
+}
+
+function getAuthSpreadsheet_() {
+  return getSubmissionLogSpreadsheet();
 }
 
 function getManagedSpreadsheetId_(unit, fallbackId, areaId, storeId) {
-  const db = SpreadsheetApp.openById(ADMIN_SPREADSHEET_ID);
+  const db = getDbSpreadsheet();
   const sheet = getSheetWithHeaders(db, SHEETS.FILES);
-  const rows = readObjects(sheet);
+  const rows = memoizeRequest_("master:managed-files", () => readObjects(sheet));
   const matched = rows.find((row) => (
     normalizeKey(row["管理単位"]) === normalizeKey(unit) &&
     (!areaId || normalizeKey(row["エリアID"]) === normalizeKey(areaId)) &&
@@ -713,16 +1284,19 @@ function getManagedSpreadsheetId_(unit, fallbackId, areaId, storeId) {
 }
 
 function getSheetWithHeaders(spreadsheet, sheetName) {
-  const sheet = spreadsheet.getSheetByName(sheetName) || spreadsheet.insertSheet(sheetName);
-  const headers = HEADERS[sheetName];
-  if (!headers) return sheet;
-  const current = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
-  const missing = sheet.getLastRow() === 0 || current.join("\t") !== headers.join("\t");
-  if (missing) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sheet.setFrozenRows(1);
-  }
-  return sheet;
+  const key = `sheet:${spreadsheet.getId()}:${sheetName}`;
+  return memoizeRequest_(key, () => {
+    const sheet = spreadsheet.getSheetByName(sheetName) || spreadsheet.insertSheet(sheetName);
+    const headers = HEADERS[sheetName];
+    if (!headers) return sheet;
+    const current = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+    const missing = sheet.getLastRow() === 0 || current.join("\t") !== headers.join("\t");
+    if (missing) {
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.setFrozenRows(1);
+    }
+    return sheet;
+  });
 }
 
 function readObjects(sheet) {
@@ -1056,20 +1630,24 @@ function onOpen() {
     .addItem("初期シート作成", "setupMasterSheets")
     .addItem("管理者ID_DB作成", "setupAdminDatabase")
     .addItem("ID_DBの変更を反映", "applyAdminIdDbChanges")
+    .addItem("パスワードサマリ再作成", "rebuildPasswordSummary")
     .addItem("最新月の全体/エリアシート再作成", "rebuildLatestMonthView")
     .addItem("このシートを確定反映", "confirmActiveSheet")
     .addToUi();
 }
 
 function getOverallSpreadsheet() {
-  return SpreadsheetApp.openById(getManagedSpreadsheetId_("全体確認", OVERALL_SPREADSHEET_ID));
+  return memoizeRequest_("spreadsheet:overall", () => (
+    SpreadsheetApp.openById(getManagedSpreadsheetId_("全体確認", OVERALL_SPREADSHEET_ID))
+  ));
 }
 
 function getAdminSpreadsheet() {
-  return SpreadsheetApp.openById(ADMIN_SPREADSHEET_ID);
+  return getDbSpreadsheet();
 }
 
 function setupAdminDatabase() {
+  resetRequestCache_();
   const admin = getAdminSpreadsheet();
   const idDb = getAdminSheetWithHeaders_(admin, ADMIN_DB_SHEET_NAME, ADMIN_DB_HEADERS);
   getAdminSheetWithHeaders_(admin, ADMIN_FILE_SHEET_NAME, ADMIN_FILE_HEADERS);
