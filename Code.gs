@@ -68,9 +68,9 @@ const HEADERS = {
   [SHEETS.PT_REQUESTS]: ["PT申請ID", "従業員ID", "氏名", "所属店舗ID", "勤務エリアID", "勤務店舗ID", "勤務日", "開始時刻", "終了時刻", "申請日時", "状態", "備考"],
   [SHEETS.CONFIRMED]: ["確定シフトID", "対象月", "日付", "従業員ID", "氏名", "所属エリアID", "所属店舗ID", "勤務エリアID", "勤務店舗ID", "開始時刻", "終了時刻", "区分", "確定元", "確定日時", "確定者ID"],
   [SHEETS.CHANGE_LOG]: ["変更ID", "対象データ種別", "対象ID", "変更前", "変更後", "変更理由", "変更者ID", "変更日時"],
-  [SHEETS.LOGIN_ACCOUNTS]: ["従業員ID", "パスワードハッシュ", "パスワードソルト", "登録日時", "最終ログイン日時", "有効フラグ", "ログイン失敗回数", "ロック期限", "パスワード更新日時"],
-  [SHEETS.AUTH_SESSIONS]: ["トークンハッシュ", "従業員ID", "発行日時", "有効期限", "最終利用日時", "有効フラグ"],
-  [SHEETS.PASSWORD_SUMMARY]: ["従業員ID", "パスワードハッシュ", "更新日時", "有効フラグ"],
+  [SHEETS.LOGIN_ACCOUNTS]: ["従業員ID", "パスワードハッシュ", "パスワードソルト", "登録日時", "最終ログイン日時", "有効フラグ", "ログイン失敗回数", "ロック期限", "パスワード更新日時", "パスワード版"],
+  [SHEETS.AUTH_SESSIONS]: ["トークンハッシュ", "従業員ID", "発行日時", "有効期限", "最終利用日時", "有効フラグ", "セッションID", "発行時パスワード版"],
+  [SHEETS.PASSWORD_SUMMARY]: ["従業員ID", "パスワードハッシュ", "更新日時", "有効フラグ", "パスワード版"],
 }; //ヘッダー定義
 
 function doGet() {
@@ -158,6 +158,10 @@ function registerAccount(payload) {
     const salt = createRandomSecret_();
     const passwordHash = hashPassword_(password, salt);
     const now = new Date();
+    const targetRow = existingRow || sheet.getLastRow() + 1;
+    const previousValues = existingRow
+      ? sheet.getRange(existingRow, 1, 1, HEADERS[SHEETS.LOGIN_ACCOUNTS].length).getValues()[0]
+      : null;
     const values = [
       staff.employeeId,
       passwordHash,
@@ -168,14 +172,24 @@ function registerAccount(payload) {
       0,
       "",
       now,
+      1,
     ];
     writeRow(sheet, existingRow, values);
-    trySyncPasswordSummaryForAccount_(staff.employeeId, passwordHash, true, now);
+    try {
+      syncPasswordSummaryForAccount_(staff.employeeId, passwordHash, true, now, 1);
+    } catch (error) {
+      if (previousValues) {
+        sheet.getRange(targetRow, 1, 1, previousValues.length).setValues([previousValues]);
+      } else {
+        sheet.getRange(targetRow, 1, 1, HEADERS[SHEETS.LOGIN_ACCOUNTS].length).clearContent();
+      }
+      throw new Error("パスワード登録を完了できませんでした。時間をおいてもう一度お試しください。");
+    }
   } finally {
     lock.releaseLock();
   }
 
-  const session = createSession_(staff);
+  const session = createSession_(staff, 1);
   console.log("[registerAccount] 初回登録完了", { employeeId: staff.employeeId });
   return buildAuthResponse_(staff, session);
 }
@@ -215,7 +229,8 @@ function login(payload) {
 
   sheet.getRange(row, 5).setValue(new Date());
   sheet.getRange(row, 7, 1, 2).setValues([[0, ""]]);
-  const session = createSession_(staff);
+  const passwordVersion = getPasswordVersion_(values[9]);
+  const session = createSession_(staff, passwordVersion);
   console.log("[login] ログイン成功", { employeeId: staff.employeeId });
   return buildAuthResponse_(staff, session);
 }
@@ -232,6 +247,7 @@ function changePassword(payload) {
   if (currentPassword === newPassword) throw new Error("現在とは異なるパスワードを入力してください。");
 
   const staff = auth.staff;
+  let passwordVersion = 1;
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
@@ -251,14 +267,40 @@ function changePassword(payload) {
     const salt = createRandomSecret_();
     const passwordHash = hashPassword_(newPassword, salt);
     const now = new Date();
-    sheet.getRange(row, 2, 1, 2).setValues([[passwordHash, salt]]);
-    sheet.getRange(row, 7, 1, 3).setValues([[0, "", now]]);
-    trySyncPasswordSummaryForAccount_(staff.employeeId, passwordHash, true, now);
+    const previousValues = values.slice();
+    passwordVersion = getPasswordVersion_(values[9]) + 1;
+    const nextValues = values.slice();
+    nextValues[1] = passwordHash;
+    nextValues[2] = salt;
+    nextValues[6] = 0;
+    nextValues[7] = "";
+    nextValues[8] = now;
+    nextValues[9] = passwordVersion;
+    sheet.getRange(row, 1, 1, HEADERS[SHEETS.LOGIN_ACCOUNTS].length).setValues([nextValues]);
+    try {
+      syncPasswordSummaryForAccount_(staff.employeeId, passwordHash, true, now, passwordVersion);
+    } catch (error) {
+      sheet.getRange(row, 1, 1, previousValues.length).setValues([previousValues]);
+      try {
+        syncPasswordSummaryForAccount_(staff.employeeId, previousValues[1], true, previousValues[8] || previousValues[3], getPasswordVersion_(previousValues[9]));
+      } catch (rollbackError) {
+        console.error("[changePassword] パスワードサマリの復元に失敗", {
+          employeeId: staff.employeeId,
+          errorName: rollbackError && rollbackError.name ? rollbackError.name : "Error",
+        });
+      }
+      throw new Error("パスワード変更を完了できませんでした。時間をおいてもう一度お試しください。");
+    }
   } finally {
     lock.releaseLock();
   }
 
-  const session = createSession_(staff);
+  let session;
+  try {
+    session = createSession_(staff, passwordVersion);
+  } catch (error) {
+    throw new Error("パスワードは変更されましたが、ログイン更新を完了できませんでした。新しいパスワードでログインし直してください。");
+  }
   console.log("[changePassword] パスワード変更完了", { employeeId: staff.employeeId });
   return { ok: true, session: buildSessionPayload_(staff, session) };
 }
@@ -271,6 +313,8 @@ function getSessionData(authToken) {
   return buildAuthResponse_(auth.staff, {
     token: authToken,
     expiresAt: auth.expiresAt,
+    sessionId: auth.sessionId,
+    passwordVersion: auth.passwordVersion,
   });
 }
 
@@ -314,6 +358,8 @@ function buildSessionPayload_(staff, session) {
   return {
     authToken: session.token,
     expiresAt: toIsoString_(session.expiresAt),
+    sessionId: session.sessionId || "",
+    passwordVersion: getPasswordVersion_(session.passwordVersion),
     employeeId: staff.employeeId,
     name: staff.name,
     primaryAreaId: staff.primaryAreaId,
@@ -388,6 +434,7 @@ function syncPasswordSummary_() {
         normalizeKey(row["パスワードハッシュ"]),
         row["パスワード更新日時"] || row["登録日時"] || new Date(),
         toBoolean(row["有効フラグ"]),
+        getPasswordVersion_(row["パスワード版"]),
       ]);
 
     if (summarySheet.getLastRow() > 1) {
@@ -400,24 +447,10 @@ function syncPasswordSummary_() {
   }
 }
 
-function syncPasswordSummaryForAccount_(employeeId, passwordHash, active, updatedAt) {
+function syncPasswordSummaryForAccount_(employeeId, passwordHash, active, updatedAt, passwordVersion) {
   const sheet = getSheetWithHeaders(getDbSpreadsheet(), SHEETS.PASSWORD_SUMMARY);
   const row = findRowByKeys(sheet, { 1: employeeId });
-  writeRow(sheet, row, [employeeId, passwordHash, updatedAt || new Date(), active !== false]);
-}
-
-/** サマリは派生データのため、同期失敗で登録・変更済みパスワードを失敗扱いにしない。 */
-function trySyncPasswordSummaryForAccount_(employeeId, passwordHash, active, updatedAt) {
-  try {
-    syncPasswordSummaryForAccount_(employeeId, passwordHash, active, updatedAt);
-    return true;
-  } catch (error) {
-    console.error("[trySyncPasswordSummaryForAccount_] パスワードサマリ同期失敗", {
-      employeeId,
-      errorName: error && error.name ? error.name : "Error",
-    });
-    return false;
-  }
+  writeRow(sheet, row, [employeeId, passwordHash, updatedAt || new Date(), active !== false, getPasswordVersion_(passwordVersion)]);
 }
 
 function findStaffById_(employeeId) {
@@ -449,21 +482,49 @@ function validateNewPassword_(password, passwordConfirm) {
   if (password !== passwordConfirm) throw new Error("確認用パスワードが一致しません。もう一度入力してください。");
 }
 
-function createSession_(staff) {
+function getPasswordVersion_(value) {
+  const version = Number(value);
+  return Number.isInteger(version) && version > 0 ? version : 1;
+}
+
+function createSession_(staff, passwordVersion) {
   const token = `${createRandomSecret_()}${createRandomSecret_()}`;
+  const sessionId = Utilities.getUuid();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_LIFETIME_HOURS * 60 * 60 * 1000);
-  const sheet = getSheetWithHeaders(getAuthSpreadsheet_(), SHEETS.AUTH_SESSIONS);
-  const row = findRowByKeys(sheet, { 2: staff.employeeId });
-  writeRow(sheet, row, [
-    hashSessionToken_(token),
-    staff.employeeId,
-    now,
-    expiresAt,
-    now,
-    true,
-  ]);
-  return { token, expiresAt };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getSheetWithHeaders(getAuthSpreadsheet_(), SHEETS.AUTH_SESSIONS);
+    revokeSessionsForEmployee_(sheet, staff.employeeId);
+    const row = findRowByKeys(sheet, { 2: staff.employeeId });
+    writeRow(sheet, row, [
+      hashSessionToken_(token),
+      staff.employeeId,
+      now,
+      expiresAt,
+      now,
+      true,
+      sessionId,
+      getPasswordVersion_(passwordVersion),
+    ]);
+  } finally {
+    lock.releaseLock();
+  }
+  return { token, expiresAt, sessionId, passwordVersion: getPasswordVersion_(passwordVersion) };
+}
+
+function revokeSessionsForEmployee_(sheet, employeeId) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  const rows = sheet.getRange(2, 1, lastRow - 1, HEADERS[SHEETS.AUTH_SESSIONS].length).getValues();
+  let revoked = 0;
+  rows.forEach((row, index) => {
+    if (normalizeKey(row[1]) !== normalizeKey(employeeId) || !toBoolean(row[5])) return;
+    sheet.getRange(index + 2, 6).setValue(false);
+    revoked += 1;
+  });
+  return revoked;
 }
 
 function authenticateSession_(authToken) {
@@ -482,6 +543,19 @@ function authenticateSession_(authToken) {
     throw new Error("ログインの有効期限が切れました。もう一度ログインしてください。");
   }
 
+  const accountSheet = getSheetWithHeaders(getAuthSpreadsheet_(), SHEETS.LOGIN_ACCOUNTS);
+  const accountRow = findRowByKeys(accountSheet, { 1: values[1] });
+  if (!accountRow || !toBoolean(accountSheet.getRange(accountRow, 6).getValue())) {
+    sheet.getRange(row, 6).setValue(false);
+    throw new Error("ログインアカウントが無効です。管理者へ確認してください。");
+  }
+  const accountVersion = getPasswordVersion_(accountSheet.getRange(accountRow, 10).getValue());
+  const sessionVersion = getPasswordVersion_(values[7]);
+  if (sessionVersion !== accountVersion) {
+    sheet.getRange(row, 6).setValue(false);
+    throw new Error("パスワード変更後のため、もう一度ログインしてください。");
+  }
+
   const lastUsedAt = toDate_(values[4]);
   if (!lastUsedAt || Date.now() - lastUsedAt.getTime() > 10 * 60 * 1000) {
     sheet.getRange(row, 5).setValue(new Date());
@@ -490,6 +564,8 @@ function authenticateSession_(authToken) {
   return {
     staff: findStaffById_(values[1]),
     expiresAt,
+    sessionId: normalizeKey(values[6]),
+    passwordVersion: sessionVersion,
   };
 }
 
