@@ -1052,12 +1052,13 @@ function confirmMatrixSheet(options) {
   const adminEmail = assertAdminUser_();
   options = options || {};
   const month = validateMonthValue_(options.month);
-  const areaId = normalizeKey(options.areaId);
+  const sourceContext = resolveConfirmationSource_(options, month);
+  const areaId = sourceContext.areaId;
   const master = getMasterSpreadsheet();
-  const sourceSpreadsheetId = options.sourceSpreadsheetId || getManagedSpreadsheetId_("エリア確認", AREA_SPREADSHEET_ID, areaId);
+  const sourceSpreadsheetId = sourceContext.spreadsheetId;
   const sourceSpreadsheet = SpreadsheetApp.openById(sourceSpreadsheetId);
-  const sheet = sourceSpreadsheet.getSheetByName(options.sourceSheetName);
-  if (!sheet) throw new Error(`確定対象シートが見つかりません: ${options.sourceSheetName}`);
+  const sheet = sourceSpreadsheet.getSheetByName(sourceContext.sheetName);
+  if (!sheet) throw new Error(`確定対象シートが見つかりません: ${sourceContext.sheetName}`);
 
   const parsed = parseConfirmedCells(sheet, month, adminEmail);
   const filtered = areaId
@@ -1074,7 +1075,7 @@ function confirmMatrixSheet(options) {
     appendChangeLog(
       master,
       "確定シフト",
-      `${sourceSpreadsheetId}:${options.sourceSheetName}`,
+      `${sourceSpreadsheetId}:${sourceContext.sheetName}`,
       JSON.stringify(previous),
       JSON.stringify(filtered),
       "シート確定ボタン",
@@ -1085,6 +1086,39 @@ function confirmMatrixSheet(options) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function resolveConfirmationSource_(options, month) {
+  const sourceSheetName = normalizeKey(options && options.sourceSheetName);
+  const requestedAreaId = normalizeKey(options && options.areaId);
+  const sourceAreaId = detectAreaIdFromSheetName(sourceSheetName);
+  let expectedSpreadsheetId = "";
+  let expectedSheetName = "";
+  let areaId = "";
+
+  if (sourceAreaId) {
+    areaId = sourceAreaId;
+    expectedSheetName = `エリア_${areaId}_${month}`;
+    if (requestedAreaId && requestedAreaId !== areaId) {
+      throw new Error("確定対象のエリアIDとシート名が一致しません。");
+    }
+    expectedSpreadsheetId = getManagedSpreadsheetId_("エリア確認", AREA_SPREADSHEET_ID, areaId);
+  } else if (sourceSheetName === `全体_${month}`) {
+    if (requestedAreaId) throw new Error("全体確認シートへエリアIDを指定できません。");
+    expectedSheetName = `全体_${month}`;
+    expectedSpreadsheetId = getManagedSpreadsheetId_("全体確認", OVERALL_SPREADSHEET_ID);
+  } else {
+    throw new Error("確定対象は管理されたエリア確認または全体確認シートを指定してください。");
+  }
+
+  if (sourceSheetName !== expectedSheetName) {
+    throw new Error("確定対象の対象月とシート名が一致しません。");
+  }
+  const requestedSpreadsheetId = normalizeKey(options && options.sourceSpreadsheetId);
+  if (requestedSpreadsheetId && requestedSpreadsheetId !== expectedSpreadsheetId) {
+    throw new Error("確定対象ファイルが現在の管理設定と一致しません。");
+  }
+  return { spreadsheetId: expectedSpreadsheetId, sheetName: expectedSheetName, areaId };
 }
 
 function setupMasterSheets() {
@@ -1865,13 +1899,28 @@ function getManagedSpreadsheetId_(unit, fallbackId, areaId, storeId) {
   const db = getDbSpreadsheet();
   const sheet = getSheetWithHeaders(db, SHEETS.FILES);
   const rows = memoizeRequest_("master:managed-files", () => readObjects(sheet));
-  const matched = rows.find((row) => (
-    normalizeKey(row["管理単位"]) === normalizeKey(unit) &&
-    (!areaId || normalizeKey(row["エリアID"]) === normalizeKey(areaId)) &&
-    (!storeId || normalizeKey(row["店舗ID"]) === normalizeKey(storeId)) &&
-    toBoolean(row["有効フラグ"])
-  ));
-  return normalizeKey(matched && matched["スプレッドシートID"]) || fallbackId;
+  const requestedAreaId = normalizeKey(areaId);
+  const requestedStoreId = normalizeKey(storeId);
+  const matched = rows
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) => {
+      const rowAreaId = normalizeKey(row["エリアID"]);
+      const rowStoreId = normalizeKey(row["店舗ID"]);
+      return normalizeKey(row["管理単位"]) === normalizeKey(unit) &&
+        (!requestedAreaId || !rowAreaId || rowAreaId === requestedAreaId) &&
+        (!requestedStoreId || !rowStoreId || rowStoreId === requestedStoreId) &&
+        toBoolean(row["有効フラグ"]);
+    })
+    .sort((left, right) => {
+      const score = ({ row }) => {
+        const rowAreaId = normalizeKey(row["エリアID"]);
+        const rowStoreId = normalizeKey(row["店舗ID"]);
+        return (requestedAreaId && rowAreaId === requestedAreaId ? 4 : !rowAreaId ? 2 : 0) +
+          (requestedStoreId && rowStoreId === requestedStoreId ? 2 : !rowStoreId ? 1 : 0);
+      };
+      return score(right) - score(left) || left.index - right.index;
+    })[0];
+  return normalizeKey(matched && matched.row["スプレッドシートID"]) || fallbackId;
 }
 
 function getSheetWithHeaders(spreadsheet, sheetName) {
