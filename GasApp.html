@@ -1188,6 +1188,9 @@
       const legacyStorageKey = "shift-form-draft-v2";
       const authStorageKey = "shift-auth-session-v1";
       const operationStorageKey = "shift-pending-operation-v1";
+      const operationTimeoutMs = 20000;
+      const operationPollLimitMs = 120000;
+      const operationPollDelays = [1000, 2000, 4000, 8000, 16000, 30000];
       const state = {
         areas: [],
         stores: [],
@@ -1265,6 +1268,7 @@
       let pendingConfirmAction = null;
       let passwordChangePending = false;
       let activeDraftMonth = "";
+      const activeSubmissionOperations = { shift: null, pt: null };
 
       const publicErrorPatterns = [
         /^(従業員ID|パスワード|確認用パスワード|現在のパスワード|ログイン|この従業員ID)/,
@@ -1363,6 +1367,95 @@
         }
       }
 
+      function startOperationWatch(kind, operationId, payload, button, messageNode, onCompleted) {
+        stopOperationWatch(kind);
+        const context = {
+          kind,
+          operationId,
+          payload,
+          button,
+          messageNode,
+          onCompleted,
+          startedAt: Date.now(),
+          pollIndex: 0,
+          timeoutId: null,
+          pollTimerId: null,
+        };
+        activeSubmissionOperations[kind] = context;
+        context.timeoutId = window.setTimeout(() => {
+          if (!isCurrentOperation(context)) return;
+          setButtonBusy(button, true, "結果確認中...");
+          setMessage(messageNode, "通信が途切れたため、保存結果を確認しています。入力はそのままです。再送せずお待ちください。", "error");
+          scheduleOperationPoll(context);
+        }, operationTimeoutMs);
+        return context;
+      }
+
+      function isCurrentOperation(context) {
+        return Boolean(context && activeSubmissionOperations[context.kind] === context);
+      }
+
+      function stopOperationWatch(kind) {
+        const context = activeSubmissionOperations[kind];
+        if (!context) return;
+        window.clearTimeout(context.timeoutId);
+        window.clearTimeout(context.pollTimerId);
+        setButtonBusy(context.button, false);
+        activeSubmissionOperations[kind] = null;
+      }
+
+      function stopAllOperationWatches() {
+        stopOperationWatch("shift");
+        stopOperationWatch("pt");
+      }
+
+      function scheduleOperationPoll(context) {
+        if (!isCurrentOperation(context)) return;
+        const delay = operationPollDelays[Math.min(context.pollIndex, operationPollDelays.length - 1)];
+        if (Date.now() - context.startedAt + delay > operationPollLimitMs) {
+          stopOperationWatch(context.kind);
+          setButtonBusy(context.button, false);
+          setMessage(context.messageNode, "保存結果を確認できませんでした。入力と操作IDは端末に残っています。時間をおいて同じ内容で再度確認してください。", "error");
+          return;
+        }
+        context.pollIndex += 1;
+        context.pollTimerId = window.setTimeout(() => pollOperationStatus(context), delay);
+      }
+
+      function pollOperationStatus(context) {
+        if (!isCurrentOperation(context)) return;
+        google.script.run
+          .withSuccessHandler((status) => {
+            if (!isCurrentOperation(context)) return;
+            if (status && status.status === "COMPLETED" && status.result) {
+              stopOperationWatch(context.kind);
+              context.onCompleted(status.result);
+              return;
+            }
+            if (status && status.status === "FAILED_RETRYABLE") {
+              stopOperationWatch(context.kind);
+              setButtonBusy(context.button, false);
+              const saved = status.saveState === "部分保存" ? "一部は保存されています。" : "保存は完了していません。";
+              setMessage(context.messageNode, `${saved} 入力は保持しています。同じ内容で再度実行してください。`, "error");
+              return;
+            }
+            scheduleOperationPoll(context);
+          })
+          .withFailureHandler((error) => {
+            if (!isCurrentOperation(context)) return;
+            const message = getErrorMessage(error);
+            if (/ログイン|セッション|有効期限/.test(message)) {
+              stopOperationWatch(context.kind);
+              setButtonBusy(context.button, false);
+              handleAuthenticatedFailure(error, context.messageNode, "保存結果を確認できませんでした。");
+              return;
+            }
+            logClientFailure("pollOperationStatus", error);
+            scheduleOperationPoll(context);
+          })
+          .getOperationStatus({ authToken: state.authToken, operationId: context.operationId });
+      }
+
       function prepareSubmissionOperation(kind, payload, onReady, onFailure) {
         let pending;
         try {
@@ -1406,7 +1499,7 @@
 
       function setButtonBusy(button, busy, busyLabel = "処理中...") {
         if (busy) {
-          button.dataset.defaultLabel = button.textContent;
+          if (!button.dataset.defaultLabel) button.dataset.defaultLabel = button.textContent;
           button.textContent = busyLabel;
           button.disabled = true;
           return;
@@ -1469,6 +1562,7 @@
       }
 
       function clearAuthenticatedApp(message = "ログアウトしました。") {
+        stopAllOperationWatches();
         sessionStorage.removeItem(authStorageKey);
         state.session = null;
         state.authToken = "";
@@ -2252,23 +2346,39 @@
       }
 
       function sendShiftOperation(payload, operationId, submitButton) {
+        const context = startOperationWatch(
+          "shift",
+          operationId,
+          payload,
+          submitButton,
+          elements.message,
+          (result) => completeShiftOperation(payload, operationId, submitButton, result)
+        );
         google.script.run
           .withSuccessHandler((result) => {
-            console.log("[executeSubmitShift] 提出成功", { operationId, updated: Boolean(result && result.updated) });
-            clearPendingOperation("shift", payload);
-            persistDraft(payload);
-            const title = result.updated ? "シフト希望を更新しました" : "シフト希望を提出しました";
-            const body = `${state.session.name}さんの${payload.month}分を保存しました。希望確認から提出内容を確認できます。`;
-            setMessage(elements.message, title, "success");
-            showResultDialog(title, body);
-            setButtonBusy(submitButton, false);
+            if (!isCurrentOperation(context)) return;
+            stopOperationWatch("shift");
+            completeShiftOperation(payload, operationId, submitButton, result);
           })
           .withFailureHandler((error) => {
+            if (!isCurrentOperation(context)) return;
+            stopOperationWatch("shift");
             logClientFailure("executeSubmitShift", error);
             setButtonBusy(submitButton, false);
             handleAuthenticatedFailure(error, elements.message, "送信に失敗しました。入力内容を確認してください。");
           })
           .submitShift({ ...payload, operationId });
+      }
+
+      function completeShiftOperation(payload, operationId, submitButton, result) {
+        console.log("[executeSubmitShift] 提出成功", { operationId, updated: Boolean(result && result.updated) });
+        clearPendingOperation("shift", payload);
+        persistDraft(payload);
+        const title = result && result.updated ? "シフト希望を更新しました" : "シフト希望を提出しました";
+        const body = `${state.session.name}さんの${payload.month}分を保存しました。希望確認から提出内容を確認できます。`;
+        setMessage(elements.message, title, "success");
+        showResultDialog(title, body);
+        setButtonBusy(submitButton, false);
       }
 
       function confirmClearShift(event) {
@@ -2339,20 +2449,36 @@
       }
 
       function sendPtOperation(payload, operationId, submitButton) {
+        const context = startOperationWatch(
+          "pt",
+          operationId,
+          payload,
+          submitButton,
+          elements.ptMessage,
+          (result) => completePtOperation(payload, operationId, submitButton, result)
+        );
         google.script.run
           .withSuccessHandler((result) => {
-            console.log("[submitPt] PT申請成功", { operationId, requestId: result && result.requestId });
-            clearPendingOperation("pt", payload);
-            setButtonBusy(submitButton, false);
-            setMessage(elements.ptMessage, "PT申請を受け付けました。", "success");
-            showResultDialog("PT申請を受け付けました", `${state.session.name}さんのPT申請を保存しました。希望確認から内容を確認できます。`);
+            if (!isCurrentOperation(context)) return;
+            stopOperationWatch("pt");
+            completePtOperation(payload, operationId, submitButton, result);
           })
           .withFailureHandler((error) => {
+            if (!isCurrentOperation(context)) return;
+            stopOperationWatch("pt");
             logClientFailure("submitPt", error);
             setButtonBusy(submitButton, false);
             handleAuthenticatedFailure(error, elements.ptMessage, "PT申請に失敗しました。入力内容を確認してください。");
           })
           .submitPtRequest({ ...payload, operationId });
+      }
+
+      function completePtOperation(payload, operationId, submitButton, result) {
+        console.log("[submitPt] PT申請成功", { operationId, requestId: result && result.requestId });
+        clearPendingOperation("pt", payload);
+        setButtonBusy(submitButton, false);
+        setMessage(elements.ptMessage, "PT申請を受け付けました。", "success");
+        showResultDialog("PT申請を受け付けました", `${state.session.name}さんのPT申請を保存しました。希望確認から内容を確認できます。`);
       }
 
       function loadHopes() {
