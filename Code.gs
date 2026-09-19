@@ -16,6 +16,9 @@ const SESSION_LIFETIME_HOURS = 12;
 const LOGIN_MAX_FAILURES = 5;
 const LOGIN_LOCK_MINUTES = 15;
 const PASSWORD_HASH_ROUNDS = 1200;
+const REGISTRATION_CODE_LIFETIME_HOURS = 72;
+const REGISTRATION_CODE_MAX_FAILURES = 5;
+const REGISTRATION_CODE_PEPPER_PROPERTY = "SHIFT_REGISTRATION_CODE_PEPPER";
 const SHIFT_TIME_ZONE = "Asia/Tokyo";
 const SHIFT_INPUT_TYPES = ["未入力", "勤務可能", "休み希望", "有給希望", "PT"];
 const ADMIN_EMAILS_PROPERTY = "SHIFT_SYSTEM_ADMIN_EMAILS";
@@ -37,6 +40,7 @@ const SHEETS = {
   AUTH_SESSIONS: "ログインセッション",
   PASSWORD_SUMMARY: "従業員パスワードサマリ",
   OPERATIONS: "操作処理状態",
+  REGISTRATION_CODES: "初回登録コード",
 }; //スプシ内シート
 
 //
@@ -74,6 +78,7 @@ const HEADERS = {
   [SHEETS.AUTH_SESSIONS]: ["トークンハッシュ", "従業員ID", "発行日時", "有効期限", "最終利用日時", "有効フラグ", "セッションID", "発行時パスワード版"],
   [SHEETS.PASSWORD_SUMMARY]: ["従業員ID", "パスワードハッシュ", "更新日時", "有効フラグ", "パスワード版"],
   [SHEETS.OPERATIONS]: ["操作ID", "処理種別", "業務キー", "従業員ID", "ペイロードハッシュ", "状態", "保存状態", "結果JSON", "エラーコード", "作成日時", "更新日時"],
+  [SHEETS.REGISTRATION_CODES]: ["従業員ID", "コードハッシュ", "発行日時", "有効期限", "状態", "失敗回数", "使用日時", "使用操作ID", "発行者ID"],
 }; //ヘッダー定義
 
 function doGet() {
@@ -157,14 +162,25 @@ function lookupEmployeeForRegistration(payload) {
   resetRequestCache_();
   ensureAuthSheets_();
   const employeeId = normalizeKey(payload && payload.employeeId);
+  const registrationCode = normalizeRegistrationCode_(payload && payload.registrationCode);
   if (!employeeId) throw new Error("従業員IDを入力してください。");
+  if (!registrationCode) throw new Error("登録コードを入力してください。");
 
-  const staff = findStaffById_(employeeId);
-  const accountSheet = getSheetWithHeaders(getAuthSpreadsheet_(), SHEETS.LOGIN_ACCOUNTS);
-  const accountRow = findRowByKeys(accountSheet, { 1: staff.employeeId });
-  if (accountRow) {
-    const active = toBoolean(accountSheet.getRange(accountRow, 6).getValue());
-    if (active) throw new Error("この従業員IDは登録済みです。ログイン画面から進んでください。");
+  let staff = null;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const authSpreadsheet = getAuthSpreadsheet_();
+    validateRegistrationCode_(getSheetWithHeaders(authSpreadsheet, SHEETS.REGISTRATION_CODES), employeeId, registrationCode);
+    staff = findStaffById_(employeeId);
+    const accountSheet = getSheetWithHeaders(authSpreadsheet, SHEETS.LOGIN_ACCOUNTS);
+    const accountRow = findRowByKeys(accountSheet, { 1: staff.employeeId });
+    if (accountRow) {
+      const active = toBoolean(accountSheet.getRange(accountRow, 6).getValue());
+      if (active) throw new Error("この従業員IDは登録済みです。ログイン画面から進んでください。");
+    }
+  } finally {
+    lock.releaseLock();
   }
 
   console.log("[lookupEmployeeForRegistration] 従業員ID確認完了", { employeeId: staff.employeeId });
@@ -176,20 +192,24 @@ function registerAccount(payload) {
   resetRequestCache_();
   ensureAuthSheets_();
   const employeeId = normalizeKey(payload && payload.employeeId);
+  const registrationCode = normalizeRegistrationCode_(payload && payload.registrationCode);
   const password = String(payload && payload.password || "");
   const passwordConfirm = String(payload && payload.passwordConfirm || "");
+  if (!registrationCode) throw new Error("登録コードを入力してください。");
   validateNewPassword_(password, passwordConfirm);
-  const staff = findStaffById_(employeeId);
+  let staff = null;
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
 
   try {
     const sheet = getSheetWithHeaders(getAuthSpreadsheet_(), SHEETS.LOGIN_ACCOUNTS);
+    const codeSheet = getSheetWithHeaders(getAuthSpreadsheet_(), SHEETS.REGISTRATION_CODES);
+    const codeRecord = validateRegistrationCode_(codeSheet, employeeId, registrationCode);
+    staff = findStaffById_(employeeId);
     const existingRow = findRowByKeys(sheet, { 1: staff.employeeId });
     if (existingRow && toBoolean(sheet.getRange(existingRow, 6).getValue())) {
       throw new Error("この従業員IDは登録済みです。ログイン画面から進んでください。");
     }
-
     const salt = createRandomSecret_();
     const passwordHash = hashPassword_(password, salt);
     const now = new Date();
@@ -197,6 +217,13 @@ function registerAccount(payload) {
     const previousValues = existingRow
       ? sheet.getRange(existingRow, 1, 1, HEADERS[SHEETS.LOGIN_ACCOUNTS].length).getValues()[0]
       : null;
+    const summarySheet = getSheetWithHeaders(getDbSpreadsheet(), SHEETS.PASSWORD_SUMMARY);
+    const summaryRow = findRowByKeys(summarySheet, { 1: staff.employeeId });
+    const summaryTargetRow = summaryRow || summarySheet.getLastRow() + 1;
+    const previousSummaryValues = summaryRow
+      ? summarySheet.getRange(summaryRow, 1, 1, HEADERS[SHEETS.PASSWORD_SUMMARY].length).getValues()[0]
+      : null;
+    const previousCodeValues = codeSheet.getRange(codeRecord.row, 5, 1, 4).getValues()[0];
     const values = [
       staff.employeeId,
       passwordHash,
@@ -209,14 +236,34 @@ function registerAccount(payload) {
       now,
       1,
     ];
-    writeRow(sheet, existingRow, values);
     try {
+      writeRow(sheet, existingRow, values);
       syncPasswordSummaryForAccount_(staff.employeeId, passwordHash, true, now, 1);
+      const registrationOperationId = `REGISTER-${createRandomSecret_()}`;
+      codeSheet.getRange(codeRecord.row, 5, 1, 4).setValues([[
+        "USED",
+        codeRecord.failures,
+        now,
+        registrationOperationId,
+      ]]);
     } catch (error) {
-      if (previousValues) {
-        sheet.getRange(targetRow, 1, 1, previousValues.length).setValues([previousValues]);
-      } else {
-        sheet.getRange(targetRow, 1, 1, HEADERS[SHEETS.LOGIN_ACCOUNTS].length).clearContent();
+      try {
+        if (previousValues) {
+          sheet.getRange(targetRow, 1, 1, previousValues.length).setValues([previousValues]);
+        } else {
+          sheet.getRange(targetRow, 1, 1, HEADERS[SHEETS.LOGIN_ACCOUNTS].length).clearContent();
+        }
+        if (previousSummaryValues) {
+          summarySheet.getRange(summaryTargetRow, 1, 1, previousSummaryValues.length).setValues([previousSummaryValues]);
+        } else {
+          summarySheet.getRange(summaryTargetRow, 1, 1, HEADERS[SHEETS.PASSWORD_SUMMARY].length).clearContent();
+        }
+        codeSheet.getRange(codeRecord.row, 5, 1, 4).setValues([previousCodeValues]);
+      } catch (rollbackError) {
+        console.error("[registerAccount] 初回登録の復元に失敗", {
+          employeeId: staff.employeeId,
+          errorName: rollbackError && rollbackError.name ? rollbackError.name : "Error",
+        });
       }
       throw new Error("パスワード登録を完了できませんでした。時間をおいてもう一度お試しください。");
     }
@@ -408,10 +455,167 @@ function ensureAuthSheets_() {
   const authSpreadsheet = getAuthSpreadsheet_();
   const accountSheet = getSheetWithHeaders(authSpreadsheet, SHEETS.LOGIN_ACCOUNTS);
   getSheetWithHeaders(authSpreadsheet, SHEETS.AUTH_SESSIONS);
+  getSheetWithHeaders(authSpreadsheet, SHEETS.REGISTRATION_CODES);
   if (accountSheet.getLastRow() < 2) {
     const migrated = migrateLegacyAuthAccounts_(getDbSpreadsheet(), authSpreadsheet);
     if (migrated > 0) syncPasswordSummary_();
   }
+}
+
+function issueRegistrationCode(employeeId) {
+  resetRequestCache_();
+  const adminEmail = assertAdminUser_();
+  ensureAuthSheets_();
+  const staff = findStaffById_(employeeId);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const authSpreadsheet = getAuthSpreadsheet_();
+    const accountSheet = getSheetWithHeaders(authSpreadsheet, SHEETS.LOGIN_ACCOUNTS);
+    const accountRow = findRowByKeys(accountSheet, { 1: staff.employeeId });
+    if (accountRow && toBoolean(accountSheet.getRange(accountRow, 6).getValue())) {
+      throw new Error("この従業員IDは登録済みのため、初回登録コードを発行できません。");
+    }
+    const sheet = getSheetWithHeaders(authSpreadsheet, SHEETS.REGISTRATION_CODES);
+    revokeIssuedRegistrationCodes_(sheet, staff.employeeId);
+    const plainCode = createRegistrationCode_();
+    const issuedAt = new Date();
+    const expiresAt = new Date(issuedAt.getTime() + REGISTRATION_CODE_LIFETIME_HOURS * 60 * 60 * 1000);
+    sheet.appendRow([
+      staff.employeeId,
+      hashRegistrationCode_(staff.employeeId, plainCode, true),
+      issuedAt,
+      expiresAt,
+      "ISSUED",
+      0,
+      "",
+      "",
+      adminEmail,
+    ]);
+    return {
+      ok: true,
+      employeeId: staff.employeeId,
+      name: staff.name,
+      registrationCode: plainCode,
+      expiresAt: expiresAt.toISOString(),
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function revokeRegistrationCodes(employeeId) {
+  resetRequestCache_();
+  assertAdminUser_();
+  ensureAuthSheets_();
+  const staff = findStaffById_(employeeId);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const revoked = revokeIssuedRegistrationCodes_(
+      getSheetWithHeaders(getAuthSpreadsheet_(), SHEETS.REGISTRATION_CODES),
+      staff.employeeId
+    );
+    return { ok: true, employeeId: staff.employeeId, revoked };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function issueRegistrationCodeFromMenu() {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.prompt("初回登録コードを発行", "従業員IDを入力してください。", ui.ButtonSet.OK_CANCEL);
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+  const result = issueRegistrationCode(response.getResponseText());
+  const expiresAtDisplay = Utilities.formatDate(new Date(result.expiresAt), SHIFT_TIME_ZONE, "yyyy年M月d日 HH:mm");
+  ui.alert(
+    "初回登録コード",
+    `${result.name}（${result.employeeId}）\nコード: ${result.registrationCode}\n有効期限: ${expiresAtDisplay}\n\nこの画面を閉じると平文コードは再表示できません。`,
+    ui.ButtonSet.OK
+  );
+}
+
+function revokeRegistrationCodeFromMenu() {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.prompt("初回登録コードを失効", "従業員IDを入力してください。", ui.ButtonSet.OK_CANCEL);
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+  const result = revokeRegistrationCodes(response.getResponseText());
+  ui.alert("初回登録コード", `${result.employeeId} の発行済みコードを${result.revoked}件失効しました。`, ui.ButtonSet.OK);
+}
+
+function createRegistrationCode_() {
+  const compact = createRandomSecret_().slice(0, 8).toUpperCase();
+  return `${compact.slice(0, 4)}-${compact.slice(4)}`;
+}
+
+function normalizeRegistrationCode_(value) {
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function hashRegistrationCode_(employeeId, registrationCode, createPepper) {
+  const properties = PropertiesService.getScriptProperties();
+  let pepper = properties.getProperty(REGISTRATION_CODE_PEPPER_PROPERTY);
+  if (!pepper && createPepper) {
+    pepper = createRandomSecret_();
+    properties.setProperty(REGISTRATION_CODE_PEPPER_PROPERTY, pepper);
+  }
+  if (!pepper) throw new Error("登録コードを確認できません。管理者に再発行を依頼してください。");
+  return digestText_(`${normalizeKey(employeeId)}\u0000${normalizeRegistrationCode_(registrationCode)}\u0000${pepper}`);
+}
+
+function getRegistrationCodeRows_(sheet, employeeId) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  return sheet.getRange(2, 1, lastRow - 1, HEADERS[SHEETS.REGISTRATION_CODES].length)
+    .getValues()
+    .map((values, index) => ({ row: index + 2, values }))
+    .filter((record) => normalizeKey(record.values[0]) === employeeId);
+}
+
+function revokeIssuedRegistrationCodes_(sheet, employeeId) {
+  const rows = getRegistrationCodeRows_(sheet, employeeId);
+  let revoked = 0;
+  rows.forEach((record) => {
+    if (normalizeKey(record.values[4]) !== "ISSUED") return;
+    sheet.getRange(record.row, 5).setValue("REVOKED");
+    revoked += 1;
+  });
+  return revoked;
+}
+
+function validateRegistrationCode_(sheet, employeeId, registrationCode) {
+  const rows = getRegistrationCodeRows_(sheet, employeeId).reverse();
+  const expectedHash = hashRegistrationCode_(employeeId, registrationCode, false);
+  const matching = rows.find((record) => timingSafeEqual_(record.values[1], expectedHash));
+  const active = rows.find((record) => normalizeKey(record.values[4]) === "ISSUED");
+  if (!matching) {
+    recordRegistrationCodeFailure_(sheet, active);
+    throw new Error("登録コードを確認できません。入力内容を確認するか、管理者に再発行を依頼してください。");
+  }
+  const status = normalizeKey(matching.values[4]);
+  if (status === "LOCKED") throw new Error("登録コードがロックされています。管理者に再発行を依頼してください。");
+  if (status === "EXPIRED") throw new Error("登録コードの有効期限が切れています。管理者に再発行を依頼してください。");
+  if (status !== "ISSUED") {
+    throw new Error("登録コードを確認できません。入力内容を確認するか、管理者に再発行を依頼してください。");
+  }
+  const failures = Number(matching.values[5]) || 0;
+  if (failures >= REGISTRATION_CODE_MAX_FAILURES) {
+    sheet.getRange(matching.row, 5).setValue("LOCKED");
+    throw new Error("登録コードがロックされています。管理者に再発行を依頼してください。");
+  }
+  const expiresAt = toDate_(matching.values[3]);
+  if (!expiresAt || expiresAt.getTime() <= Date.now()) {
+    sheet.getRange(matching.row, 5).setValue("EXPIRED");
+    throw new Error("登録コードの有効期限が切れています。管理者に再発行を依頼してください。");
+  }
+  return { row: matching.row, failures };
+}
+
+function recordRegistrationCodeFailure_(sheet, record) {
+  if (!record) return;
+  const failures = (Number(record.values[5]) || 0) + 1;
+  const status = failures >= REGISTRATION_CODE_MAX_FAILURES ? "LOCKED" : "ISSUED";
+  sheet.getRange(record.row, 5, 1, 2).setValues([[status, failures]]);
 }
 
 /** 旧DB管理用ファイルのアカウントだけを提出ログ用ファイルへ移す。セッションは再利用しない。 */
@@ -1144,7 +1348,7 @@ function setupMasterSheets() {
     SHEETS.FILES,
     SHEETS.PASSWORD_SUMMARY,
   ].forEach((sheetName) => getSheetWithHeaders(db, sheetName));
-  [SHEETS.SUBMISSIONS, SHEETS.PT_REQUESTS, SHEETS.LOGIN_ACCOUNTS, SHEETS.AUTH_SESSIONS, SHEETS.OPERATIONS]
+  [SHEETS.SUBMISSIONS, SHEETS.PT_REQUESTS, SHEETS.LOGIN_ACCOUNTS, SHEETS.AUTH_SESSIONS, SHEETS.OPERATIONS, SHEETS.REGISTRATION_CODES]
     .forEach((sheetName) => getSheetWithHeaders(log, sheetName));
   getSheetWithHeaders(area, SHEETS.FILES);
 
@@ -2317,6 +2521,8 @@ function onOpen() {
     .addItem("管理者ID_DB作成", "setupAdminDatabase")
     .addItem("ID_DBの変更を反映", "applyAdminIdDbChanges")
     .addItem("パスワードサマリ再作成", "rebuildPasswordSummary")
+    .addItem("初回登録コードを発行", "issueRegistrationCodeFromMenu")
+    .addItem("初回登録コードを失効", "revokeRegistrationCodeFromMenu")
     .addItem("最新月の全体/エリアシート再作成", "rebuildLatestMonthView")
     .addItem("このシートを確定反映", "confirmActiveSheet")
     .addToUi();
