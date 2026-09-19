@@ -1240,6 +1240,8 @@
       const legacyStorageKey = "shift-form-draft-v2";
       const authStorageKey = "shift-auth-session-v1";
       const operationStorageKey = "shift-pending-operation-v1";
+      const DRAFT_RETENTION_DAYS = 30;
+      const draftRetentionMs = DRAFT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
       const operationTimeoutMs = 20000;
       const operationPollLimitMs = 120000;
       const operationPollDelays = [1000, 2000, 4000, 8000, 16000, 30000];
@@ -2292,7 +2294,8 @@
 
       function toDraftData(payload) {
         return {
-          schemaVersion: 3,
+          schemaVersion: 4,
+          updatedAt: new Date().toISOString(),
           areaId: payload.areaId || "",
           storeId: payload.storeId || "",
           employeeId: payload.employeeId || "",
@@ -2304,26 +2307,77 @@
       }
 
       function persistDraft(payload) {
-        const draft = toDraftData(payload);
-        if (!draft.month) return;
-        localStorage.setItem(getDraftStorageKey(draft.month), JSON.stringify(draft));
+        try {
+          const draft = toDraftData(payload);
+          if (!draft.month) return false;
+          const key = getDraftStorageKey(draft.month);
+          const encoded = JSON.stringify(draft);
+          localStorage.setItem(key, encoded);
+          if (localStorage.getItem(key) !== encoded) throw new Error("下書きの再読取に失敗しました。");
+          return true;
+        } catch (error) {
+          logClientFailure("persistDraft", error);
+          setMessage(elements.message, "下書きを端末へ保存できませんでした。画面の入力はそのままです。再読み込みする前に内容を確認してください。", "error");
+          return false;
+        }
+      }
+
+      function removeDraft(month) {
+        try {
+          localStorage.removeItem(getDraftStorageKey(month));
+          return true;
+        } catch (error) {
+          logClientFailure("removeDraft", error);
+          return false;
+        }
+      }
+
+      function resetDraftForm(month) {
+        elements.shiftForm.elements.notes.value = "";
+        renderCalendar();
+        activeDraftMonth = month;
+      }
+
+      function getDraftExpiryStatus(data) {
+        if (!data || typeof data !== "object") return "invalid";
+        if (!data.updatedAt && Number(data.schemaVersion || 0) < 4) return "legacy";
+        const updatedAt = Date.parse(data.updatedAt || "");
+        if (!Number.isFinite(updatedAt)) return "invalid";
+        return Date.now() - updatedAt > draftRetentionMs ? "expired" : "valid";
       }
 
       function migrateLegacyDraft() {
         if (!state.session) return;
         const legacyKey = `${legacyStorageKey}:${state.session.employeeId}`;
-        const saved = localStorage.getItem(legacyKey);
-        if (!saved) return;
+        let saved = "";
+        let removeLegacy = false;
         try {
-          const data = JSON.parse(saved);
+          saved = localStorage.getItem(legacyKey) || "";
+          if (!saved) return;
+          let data = null;
+          try {
+            data = JSON.parse(saved);
+          } catch (error) {
+            removeLegacy = true;
+            throw error;
+          }
           if (data && /^\d{4}-\d{2}$/.test(data.month || "")) {
             const destinationKey = getDraftStorageKey(data.month);
-            if (!localStorage.getItem(destinationKey)) persistDraft(data);
+            removeLegacy = Boolean(localStorage.getItem(destinationKey)) || persistDraft(data);
+          } else {
+            removeLegacy = true;
           }
         } catch (error) {
           logClientFailure("migrateLegacyDraft", error);
+          setMessage(elements.message, "以前の下書きを読み込めませんでした。画面の入力はそのままです。", "error");
         } finally {
-          localStorage.removeItem(legacyKey);
+          if (saved && removeLegacy) {
+            try {
+              localStorage.removeItem(legacyKey);
+            } catch (error) {
+              logClientFailure("migrateLegacyDraft.remove", error);
+            }
+          }
         }
       }
 
@@ -2342,25 +2396,47 @@
         const month = /^\d{4}-\d{2}$/.test(monthValue || "") ? monthValue : getDefaultMonth();
         elements.month.value = month;
         console.log("[restoreDraft] 下書き復元開始", { month });
-        const saved = localStorage.getItem(getDraftStorageKey(month));
+        let saved = "";
+        try {
+          saved = localStorage.getItem(getDraftStorageKey(month)) || "";
+        } catch (error) {
+          resetDraftForm(month);
+          const message = "下書きを端末から読み込めませんでした。再読み込みせず、新しく入力してください。";
+          setMessage(elements.message, message, "error");
+          logClientFailure("restoreDraft.read", error);
+          return { status: "storage-error", message };
+        }
         if (!saved) {
-          elements.shiftForm.elements.notes.value = "";
-          renderCalendar();
-          activeDraftMonth = month;
+          resetDraftForm(month);
           console.log("[restoreDraft] 下書きなし");
-          return;
+          return { status: "none" };
         }
         let data = null;
         try {
           data = JSON.parse(saved);
         } catch (error) {
-          localStorage.removeItem(getDraftStorageKey(month));
-          elements.shiftForm.elements.notes.value = "";
-          renderCalendar();
-          activeDraftMonth = month;
+          const removed = removeDraft(month);
+          resetDraftForm(month);
+          const message = removed
+            ? "保存されていた下書きを読み込めなかったため削除しました。新しく入力してください。"
+            : "保存されていた下書きを読み込めず、端末から削除もできませんでした。ブラウザのサイトデータを確認してください。";
+          setMessage(elements.message, message, "error");
           logClientFailure("restoreDraft", error);
-          return;
+          return { status: "invalid", message };
         }
+        const expiryStatus = getDraftExpiryStatus(data);
+        if (expiryStatus === "expired" || expiryStatus === "invalid") {
+          const removed = removeDraft(month);
+          resetDraftForm(month);
+          const message = !removed
+            ? "使用できない下書きを端末から削除できませんでした。ブラウザのサイトデータを確認してください。"
+            : expiryStatus === "expired"
+              ? "保存から30日を過ぎた下書きを削除しました。新しく入力してください。"
+              : "保存されていた下書きが不正だったため削除しました。新しく入力してください。";
+          setMessage(elements.message, message, "error");
+          return { status: expiryStatus, message };
+        }
+        const legacyMigrated = expiryStatus !== "legacy" || persistDraft(data);
         const hasSavedArea = state.areas.some((area) => area.areaId === data.areaId);
         elements.area.value = hasSavedArea ? data.areaId : elements.area.value;
         syncStoreOptions(elements.area, elements.store, elements.employee);
@@ -2371,6 +2447,7 @@
         renderCalendar(groupShiftsByDate(data.shifts));
         activeDraftMonth = month;
         console.log("[restoreDraft] 下書き復元完了", { month });
+        return { status: expiryStatus === "legacy" ? (legacyMigrated ? "migrated" : "migration-failed") : "restored" };
       }
 
       function moveMonth(amount) {
@@ -2752,11 +2829,16 @@
         buildHourOptions(elements.ptStart, "開始", PT_MIN_TIME, PT_MAX_TIME, DEFAULT_START);
         buildHourOptions(elements.ptEnd, "終了", PT_MIN_TIME, PT_MAX_TIME, DEFAULT_END);
         migrateLegacyDraft();
-        restoreDraft();
+        const draftRestoreResult = restoreDraft();
         elements.status.textContent = data.accepting ? "受付中" : "受付停止中";
         const shiftSubmitButton = elements.shiftForm.querySelector('[type="submit"]');
         shiftSubmitButton.disabled = !data.accepting;
-        if (!data.accepting) setMessage(elements.message, "現在、シフト希望の受付は停止中です。入力内容は下書きに保存できます。", "error");
+        if (!data.accepting) {
+          const draftNotice = draftRestoreResult && draftRestoreResult.message
+            ? `${draftRestoreResult.message} `
+            : "";
+          setMessage(elements.message, `${draftNotice}現在、シフト希望の受付は停止中です。入力内容は下書きに保存できます。`, "error");
+        }
         console.log("[applyInitialData] 初期データ反映完了", {
           areas: state.areas.length,
           stores: state.stores.length,
