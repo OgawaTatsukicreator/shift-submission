@@ -2,7 +2,7 @@
 <html lang="ja">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>シフト提出・希望確認</title>
     <style>
       :root {
@@ -25,9 +25,14 @@
         box-sizing: border-box;
       }
 
+      html {
+        scroll-padding-top: 12px;
+      }
+
       body {
         margin: 0;
         min-height: 100vh;
+        min-height: 100dvh;
         background: var(--bg);
         color: var(--text);
       }
@@ -204,10 +209,19 @@
       }
 
       button {
+        min-height: 48px;
         cursor: pointer;
         -webkit-tap-highlight-color: transparent;
         transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease, background-color 120ms ease;
         touch-action: manipulation;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible {
+        outline: 3px solid rgba(38, 115, 77, 0.34);
+        outline-offset: 2px;
       }
 
       button:active,
@@ -231,7 +245,7 @@
       .app {
         max-width: 820px;
         margin: 0 auto;
-        padding: 6px 6px 96px;
+        padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(96px, calc(80px + env(safe-area-inset-bottom))) max(8px, env(safe-area-inset-left));
       }
 
       .app:focus {
@@ -286,8 +300,8 @@
 
       .account-button,
       .logout-button {
-        min-height: 38px;
-        padding: 6px 10px;
+        min-height: 48px;
+        padding: 8px 12px;
         font-size: 12px;
       }
 
@@ -387,7 +401,7 @@
       select,
       textarea {
         width: 100%;
-        min-height: 46px;
+        min-height: 48px;
         border: 1px solid var(--line);
         border-radius: 8px;
         padding: 8px 10px;
@@ -445,7 +459,7 @@
       }
 
       .button {
-        min-height: 44px;
+        min-height: 48px;
         border: 1px solid var(--line);
         border-radius: 8px;
         padding: 8px 14px;
@@ -662,6 +676,8 @@
       .confirm-dialog,
       .password-dialog {
         width: min(420px, 100%);
+        max-height: calc(100dvh - 36px);
+        overflow-y: auto;
         border: 1px solid var(--line);
         border-radius: 12px;
         background: var(--surface);
@@ -716,6 +732,8 @@
 
       .result-dialog {
         width: min(440px, 100%);
+        max-height: calc(100dvh - 36px);
+        overflow-y: auto;
         border: 1px solid #b9d9c7;
         border-radius: 8px;
         background: var(--surface);
@@ -765,22 +783,51 @@
         }
       }
 
-      @media (max-width: 560px) {
+      @media (max-width: 599px) {
+        .auth-shell {
+          min-height: 100dvh;
+          padding: max(16px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+        }
+
+        .auth-pane {
+          padding: 20px 16px;
+        }
+
         .header {
+          position: static;
           grid-template-columns: 1fr;
+          padding: 12px 2px;
         }
 
         .header-actions {
-          justify-content: space-between;
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          justify-content: stretch;
         }
 
         .user-chip {
-          flex: 1 1 100%;
+          grid-column: 1 / -1;
+          min-height: 48px;
+          align-content: center;
+        }
+
+        .user-chip strong,
+        .user-chip span {
+          overflow: visible;
+          text-overflow: clip;
+          white-space: normal;
+          overflow-wrap: anywhere;
+        }
+
+        .status {
+          min-height: 48px;
+          justify-content: center;
         }
 
         .form-grid,
         .hope-controls,
-        .schedule-row {
+        .schedule-row,
+        .calendar {
           grid-template-columns: 1fr;
         }
 
@@ -791,17 +838,65 @@
 
         .tabs button {
           min-width: 0;
-          padding: 6px 3px;
-          font-size: 12px;
+          min-height: 52px;
+          padding: 8px 4px;
+          font-size: 13px;
+          white-space: normal;
         }
 
-        .tools,
-        .calendar {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+        .tools {
+          grid-template-columns: 1fr;
         }
 
         .day {
           min-height: 0;
+          grid-template-columns: 64px minmax(0, 1fr);
+        }
+
+        .tools .button,
+        .actions .button,
+        .confirm-actions .button {
+          min-height: 52px;
+        }
+
+        .actions,
+        .confirm-actions {
+          align-items: stretch;
+        }
+
+        .actions .button {
+          flex: 1 1 100%;
+        }
+
+        .confirm-actions {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .message {
+          flex-basis: 100%;
+          line-height: 1.5;
+        }
+
+        .confirm-backdrop,
+        .password-backdrop,
+        .result-backdrop {
+          align-items: end;
+          padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+        }
+
+        .confirm-dialog,
+        .password-dialog,
+        .result-dialog {
+          width: 100%;
+          max-height: calc(100dvh - max(24px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
+        }
+
+        #prevMonth,
+        #nextMonth {
+          width: 56px;
+          height: 56px;
+          min-height: 56px;
         }
       }
     </style>
