@@ -40,7 +40,7 @@ Google Apps Script とGoogleスプレッドシートを使い、従業員がス�
 
 ### 1.5 現行実装の適合性確認
 
-確認対象は、リポジトリ上の現行GAS版である `GasApp.html` と `Code.gs`、要件定義書、設計書、READMEである。`index.html`、`styles.css`、`app.js` は旧静的版であり、現行GAS版の適合判定には使用しない。
+確認対象は、リポジトリ上の現行GAS版である `GasApp.html` と `Code.gs`、要件定義書、設計書、READMEである。`index.html`、`styles.css`、`app.js` は入力・保存・通信を行わない旧版利用停止案内であり、現行GAS版の適合判定には使用しない。
 
 | 対象 | 判定 | 確認結果 |
 | --- | --- | --- |
