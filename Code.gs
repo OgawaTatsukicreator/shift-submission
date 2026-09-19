@@ -1842,11 +1842,12 @@ function assertShiftSubmissionWindow_(monthValue, nowValue) {
 function assertStaffStoreAccess_(staff, area, store, help) {
   const primaryStore = normalizeKey(staff && staff.primaryStoreId);
   if (primaryStore && primaryStore === normalizeKey(store.storeId)) return;
+  const allowedRelations = new Set(["兼務", "ヘルプ可"]);
   const allowed = getStaffStoreSettings().some((setting) => (
     normalizeKey(setting.employeeId) === normalizeKey(staff && staff.employeeId) &&
     normalizeKey(setting.areaId) === normalizeKey(area.areaId) &&
     normalizeKey(setting.storeId) === normalizeKey(store.storeId) &&
-    (help ? setting.helpCandidate : setting.normalDisplay)
+    allowedRelations.has(normalizeKey(setting.relation))
   ));
   if (!allowed) {
     throw new Error(help
