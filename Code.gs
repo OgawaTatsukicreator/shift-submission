@@ -1051,21 +1051,40 @@ function confirmMatrixSheet(options) {
   resetRequestCache_();
   const adminEmail = assertAdminUser_();
   options = options || {};
+  const month = validateMonthValue_(options.month);
+  const areaId = normalizeKey(options.areaId);
   const master = getMasterSpreadsheet();
-  const sourceSpreadsheetId = options.sourceSpreadsheetId || getManagedSpreadsheetId_("エリア確認", AREA_SPREADSHEET_ID, options.areaId);
+  const sourceSpreadsheetId = options.sourceSpreadsheetId || getManagedSpreadsheetId_("エリア確認", AREA_SPREADSHEET_ID, areaId);
   const sourceSpreadsheet = SpreadsheetApp.openById(sourceSpreadsheetId);
   const sheet = sourceSpreadsheet.getSheetByName(options.sourceSheetName);
   if (!sheet) throw new Error(`確定対象シートが見つかりません: ${options.sourceSheetName}`);
 
-  const parsed = parseConfirmedCells(sheet, options.month, adminEmail);
-  const filtered = options.areaId
-    ? parsed.filter((item) => item.workAreaId === options.areaId)
+  const parsed = parseConfirmedCells(sheet, month, adminEmail);
+  const filtered = areaId
+    ? parsed.filter((item) => item.workAreaId === areaId)
     : parsed;
+  if (areaId && filtered.length !== parsed.length) {
+    throw new Error("確定対象シートに指定エリア外の勤務店舗が含まれています。");
+  }
 
-  filtered.forEach((item) => upsertConfirmedShift(master, item));
-  appendChangeLog(master, "確定シフト", `${sourceSpreadsheetId}:${options.sourceSheetName}`, "", JSON.stringify(filtered), "シート確定ボタン", adminEmail);
-  rebuildMonthViews(master, options.month, options.areaId ? [options.areaId] : null);
-  return `${filtered.length}件の確定シフトを反映しました。`;
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error("別の確定処理が実行中です。しばらく待ってから再実行してください。");
+  try {
+    const previous = replaceConfirmedShifts_(master, month, areaId, filtered);
+    appendChangeLog(
+      master,
+      "確定シフト",
+      `${sourceSpreadsheetId}:${options.sourceSheetName}`,
+      JSON.stringify(previous),
+      JSON.stringify(filtered),
+      "シート確定ボタン",
+      adminEmail
+    );
+    rebuildMonthViews(master, month, areaId ? [areaId] : null);
+    return `${filtered.length}件の確定シフトを反映しました。`;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function setupMasterSheets() {
@@ -1253,35 +1272,120 @@ function buildWeeklyMatrix(records, month, label, areaId) {
 }
 
 function parseConfirmedCells(sheet, month, confirmerId) {
+  month = validateMonthValue_(month);
   const range = sheet.getDataRange();
   const values = range.getValues();
   const backgrounds = range.getBackgrounds();
   const result = [];
-  const staffByName = Object.fromEntries(getStaff().map((staff) => [staff.name, staff]));
-  const storeByShort = Object.fromEntries(getStores().flatMap((store) => [[store.shortName, store], [store.storeName, store], [store.storeId, store]]));
+  const errors = [];
+  const staffByName = {};
+  getStaff().forEach((staff) => {
+    const name = normalizeKey(staff.name);
+    if (!name) return;
+    const existing = staffByName[name];
+    if (Object.prototype.hasOwnProperty.call(staffByName, name) && (!existing || existing.employeeId !== staff.employeeId)) {
+      staffByName[name] = null;
+    } else if (!Object.prototype.hasOwnProperty.call(staffByName, name)) {
+      staffByName[name] = staff;
+    }
+  });
+  const storeByAlias = {};
+  getStores().forEach((store) => {
+    [store.shortName, store.storeName, store.storeId].forEach((alias) => {
+      const key = normalizeKey(alias);
+      if (!key) return;
+      if (Object.prototype.hasOwnProperty.call(storeByAlias, key) && storeByAlias[key] && storeByAlias[key].storeId !== store.storeId) {
+        storeByAlias[key] = null;
+      } else if (!Object.prototype.hasOwnProperty.call(storeByAlias, key)) {
+        storeByAlias[key] = store;
+      }
+    });
+  });
 
-  for (let r = 0; r < values.length; r++) {
-    if (values[r][0] !== "シフト表") continue;
+  const sectionRows = [];
+  for (let r = 0; r + 4 < values.length; r++) {
+    const title = normalizeKey(values[r][2]);
+    if (/第\d+週$/.test(title) && normalizeKey(values[r + 4][1]) === "通し出勤人数") sectionRows.push(r);
+  }
+  if (!sectionRows.length) throw new Error("確定対象シートの週構成を確認できません。");
+
+  sectionRows.forEach((r, sectionIndex) => {
+    const sectionEnd = sectionIndex + 1 < sectionRows.length ? sectionRows[sectionIndex + 1] : values.length;
     const dateRow = values[r + 1] || [];
     const storeRow = values[r + 3] || [];
     let currentDate = "";
-    for (let staffRow = r + 5; staffRow < values.length; staffRow++) {
+    const dateByColumn = {};
+    for (let c = 2; c < Math.max(dateRow.length, storeRow.length); c++) {
+      if (dateRow[c]) currentDate = resolveMatrixDate(month, dateRow[c]);
+      dateByColumn[c] = currentDate;
+    }
+    for (let staffRow = r + 5; staffRow < sectionEnd; staffRow++) {
       const staffName = normalizeKey(values[staffRow][1]);
-      if (!staffName && !values[staffRow][0]) break;
-      if (!staffName || !staffByName[staffName]) continue;
+      if (!staffName) continue;
       const staff = staffByName[staffName];
       for (let c = 2; c < values[staffRow].length; c++) {
-        if (dateRow[c]) currentDate = resolveMatrixDate(month, dateRow[c]);
-        const store = storeByShort[normalizeKey(storeRow[c])];
-        if (!currentDate || !store) continue;
         const color = normalizeColor(backgrounds[staffRow][c]);
+        const cellText = normalizeKey(values[staffRow][c]);
+        const cellLabel = toA1Notation_(staffRow + 1, c + 1);
+        if (color === COLORS.OFF) {
+          if (cellText && cellText !== "NG") errors.push(`${cellLabel}: 赤セルへ勤務内容を入力できません`);
+          continue;
+        }
         const confirmType = getConfirmTypeFromColor(color);
         if (!confirmType) continue;
+        if (!staff) {
+          const reason = Object.prototype.hasOwnProperty.call(staffByName, staffName)
+            ? "氏名が重複しています"
+            : "従業員マスタに氏名がありません";
+          errors.push(`${cellLabel}: ${staffName}の${reason}`);
+          continue;
+        }
+        const date = dateByColumn[c];
+        if (!date) {
+          errors.push(`${cellLabel}: 日付を解決できません`);
+          continue;
+        }
+        try {
+          validateDateValue_(date, `${cellLabel}の日付`);
+        } catch (error) {
+          errors.push(`${cellLabel}: ${error.message}`);
+          continue;
+        }
+        if (date.slice(0, 7) !== month) {
+          errors.push(`${cellLabel}: 対象月外の日付です`);
+          continue;
+        }
+        const storeAlias = normalizeKey(storeRow[c]);
+        const store = storeByAlias[storeAlias];
+        if (!store) {
+          const reason = Object.prototype.hasOwnProperty.call(storeByAlias, storeAlias)
+            ? "店舗名が重複しています"
+            : "店舗マスタに店舗がありません";
+          errors.push(`${cellLabel}: ${storeAlias || "空欄"}の${reason}`);
+          continue;
+        }
+        if (cellText === "NG") {
+          errors.push(`${cellLabel}: 緑・青セルへNGを入力できません`);
+          continue;
+        }
         const parsed = parseShiftCell(values[staffRow][c], confirmType);
-        if (!parsed) continue;
+        if (!parsed || parsed.type === "休み") {
+          errors.push(`${cellLabel}: セル値を勤務として解釈できません`);
+          continue;
+        }
+        try {
+          if (parsed.type === "PT") {
+            validateTimeRange_(parsed.start, parsed.end, PT_MIN_TIME, PT_MAX_TIME, "PT", date);
+          } else if (parsed.type === "通常" || parsed.type === "ヘルプ") {
+            validateTimeRange_(parsed.start, parsed.end, WORK_MIN_TIME, WORK_MAX_TIME, parsed.type, date);
+          }
+        } catch (error) {
+          errors.push(`${cellLabel}: ${error.message}`);
+          continue;
+        }
         result.push({
           month,
-          date: currentDate,
+          date,
           employeeId: staff.employeeId,
           name: staff.name,
           homeAreaId: staff.primaryAreaId,
@@ -1296,8 +1400,63 @@ function parseConfirmedCells(sheet, month, confirmerId) {
         });
       }
     }
+  });
+  if (errors.length) {
+    const shown = errors.slice(0, 20);
+    const suffix = errors.length > shown.length ? ` / ほか${errors.length - shown.length}件` : "";
+    throw new Error(`確定対象セルを確認してください: ${shown.join(" / ")}${suffix}`);
   }
   return result;
+}
+
+function toA1Notation_(row, column) {
+  let label = "";
+  let value = column;
+  while (value > 0) {
+    value -= 1;
+    label = String.fromCharCode(65 + (value % 26)) + label;
+    value = Math.floor(value / 26);
+  }
+  return `${label}${row}`;
+}
+
+function confirmedShiftValues_(item) {
+  return [
+    makeConfirmedId(item.date, item.employeeId, item.workStoreId),
+    item.month,
+    item.date,
+    item.employeeId,
+    item.name,
+    item.homeAreaId,
+    item.homeStoreId,
+    item.workAreaId,
+    item.workStoreId,
+    item.start,
+    item.end,
+    item.type,
+    item.source,
+    new Date(),
+    item.confirmerId || "",
+  ];
+}
+
+function replaceConfirmedShifts_(spreadsheet, month, areaId, items) {
+  const sheet = getSheetWithHeaders(spreadsheet, SHEETS.CONFIRMED);
+  const columnCount = HEADERS[SHEETS.CONFIRMED].length;
+  const lastRow = sheet.getLastRow();
+  const existing = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, columnCount).getValues() : [];
+  const previous = [];
+  const retained = existing.filter((row) => {
+    const sameScope = normalizeMonthValue(row[1]) === month &&
+      normalizeKey(row[12]) === "エリア別シート" &&
+      (!areaId || normalizeKey(row[7]) === areaId);
+    if (sameScope) previous.push(row);
+    return !sameScope;
+  });
+  const nextRows = retained.concat(items.map(confirmedShiftValues_));
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, columnCount).clearContent();
+  if (nextRows.length) sheet.getRange(2, 1, nextRows.length, columnCount).setValues(nextRows);
+  return previous;
 }
 
 function upsertConfirmedShift(spreadsheet, item) {
@@ -1543,7 +1702,6 @@ function parseShiftCell(value, confirmType) {
 function getConfirmTypeFromColor(color) {
   if (color === COLORS.FIXED) return "通常";
   if (color === COLORS.HELP) return "ヘルプ";
-  if (color === COLORS.OFF) return "休み";
   return "";
 }
 
@@ -1874,12 +2032,17 @@ function getWeekColumnSpan(week, stores) {
 function mergeRecordSources(submissions, confirmed) {
   const map = {};
   submissions.forEach((record) => {
-    map[`${record.employeeId}:${record.storeId}:hope`] = record;
+    map[`${record.employeeId}:${record.storeId}`] = { ...record, shifts: record.shifts.slice() };
   });
   confirmed.forEach((record) => {
-    const key = `${record.employeeId}:${record.storeId}:confirmed`;
+    const key = `${record.employeeId}:${record.storeId}`;
     if (!map[key]) map[key] = { ...record, shifts: [] };
-    map[key].shifts = map[key].shifts.concat(record.shifts);
+    record.shifts.forEach((shift) => {
+      const date = normalizeDateValue(shift.date);
+      map[key].shifts = map[key].shifts.filter((item) => normalizeDateValue(item.date) !== date);
+      map[key].shifts.push(shift);
+    });
+    map[key].source = "confirmed";
   });
   return Object.values(map);
 }
