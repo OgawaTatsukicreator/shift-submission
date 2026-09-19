@@ -532,7 +532,7 @@
 
       .tools {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 8px;
       }
 
@@ -1080,6 +1080,7 @@
             <button type="button" class="button primary" data-fill="work">全日 勤務可能</button>
             <button type="button" class="button" data-fill="holiday">全日 休み希望</button>
             <button type="button" class="button danger" data-fill="clear">全日 未入力</button>
+            <button type="button" class="button" id="undoBulk" disabled>直前の一括操作を戻す</button>
           </section>
 
           <section class="calendar" id="calendarGrid"></section>
@@ -1300,6 +1301,7 @@
         weekTitle: document.querySelector("#weekTitle"),
         weekRange: document.querySelector("#weekRange"),
         weekProgress: document.querySelector("#weekProgress"),
+        undoBulk: document.querySelector("#undoBulk"),
         message: document.querySelector("#message"),
         hopeMonth: document.querySelector("#hopeMonthInput"),
         hopeMessage: document.querySelector("#hopeMessage"),
@@ -1326,6 +1328,7 @@
       let activeDraftMonth = "";
       let calendarWeeks = [];
       let activeWeekIndex = 0;
+      let lastBulkSnapshot = null;
       const activeSubmissionOperations = { shift: null, pt: null };
 
       const publicErrorPatterns = [
@@ -2335,6 +2338,7 @@
 
       function restoreDraft(monthValue = elements.month.value) {
         // ローカルストレージから下書きを復元する。
+        clearBulkUndo();
         const month = /^\d{4}-\d{2}$/.test(monthValue || "") ? monthValue : getDefaultMonth();
         elements.month.value = month;
         console.log("[restoreDraft] 下書き復元開始", { month });
@@ -2376,9 +2380,41 @@
         restoreDraft(toMonthValue(current));
       }
 
+      function clearBulkUndo() {
+        lastBulkSnapshot = null;
+        if (elements.undoBulk) elements.undoBulk.disabled = true;
+      }
+
+      function captureBulkUndo() {
+        if (!elements.calendar.children.length) return;
+        const payload = collectPayload();
+        lastBulkSnapshot = {
+          month: payload.month,
+          notes: payload.notes,
+          shifts: payload.shifts,
+          weekIndex: activeWeekIndex,
+        };
+        elements.undoBulk.disabled = false;
+      }
+
+      function undoBulkOperation() {
+        if (!lastBulkSnapshot || lastBulkSnapshot.month !== elements.month.value) {
+          clearBulkUndo();
+          return;
+        }
+        const snapshot = lastBulkSnapshot;
+        elements.shiftForm.elements.notes.value = snapshot.notes || "";
+        renderCalendar(groupShiftsByDate(snapshot.shifts));
+        showCalendarWeek(snapshot.weekIndex);
+        clearBulkUndo();
+        saveDraft();
+        setMessage(elements.message, "直前の一括操作を元に戻しました。", "success");
+      }
+
       function fillAll(mode) {
         // 1か月分のカードへ一括入力する。
         console.log("[fillAll] 一括入力", { mode });
+        captureBulkUndo();
         elements.calendar.querySelectorAll(".day").forEach((card) => {
           const type = card.querySelector('[name="type"]');
           const start = card.querySelector('[name="start"]');
@@ -2507,6 +2543,7 @@
       }
 
       function executeClearShift() {
+        captureBulkUndo();
         localStorage.removeItem(getDraftStorageKey(elements.month.value));
         elements.shiftForm.elements.notes.value = "";
         renderCalendar();
@@ -2810,7 +2847,10 @@
         saveDraft(activeDraftMonth);
         restoreDraft(nextMonth);
       });
-      elements.shiftForm.addEventListener("input", saveDraft);
+      elements.shiftForm.addEventListener("input", () => {
+        clearBulkUndo();
+        saveDraft();
+      });
       elements.shiftForm.addEventListener("submit", submitShift);
       elements.shiftForm.addEventListener("reset", confirmClearShift);
       elements.confirmCancel.addEventListener("click", closeConfirm);
@@ -2842,6 +2882,7 @@
       elements.prevWeek.addEventListener("click", () => showCalendarWeek(activeWeekIndex - 1));
       elements.nextWeek.addEventListener("click", () => showCalendarWeek(activeWeekIndex + 1));
       document.querySelectorAll("[data-fill]").forEach((button) => button.addEventListener("click", () => fillAll(button.dataset.fill)));
+      elements.undoBulk.addEventListener("click", undoBulkOperation);
 
       document.querySelector("#loadHopes").addEventListener("click", loadHopes);
 
