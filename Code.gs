@@ -997,6 +997,11 @@ function getMyShiftHopes(query) {
       normalizeDateValue(row["勤務日"]).slice(0, 7) === month
     ));
   const hopeRow = hopeRows[0] || null;
+  const hopes = hopeRow ? normalizeShifts(parseStoredShiftJson_(hopeRow["希望JSON"], {
+    hopeId: hopeRow["希望ID"],
+    employeeId: employee.employeeId,
+    month,
+  })) : [];
 
   console.log("[getMyShiftHopes] 本人の提出希望を取得", {
     employeeId: employee.employeeId,
@@ -1017,7 +1022,7 @@ function getMyShiftHopes(query) {
       storeId: normalizeKey(hopeRow["所属店舗ID"]),
       notes: normalizeKey(hopeRow["備考"]),
     } : null,
-    hopes: hopeRow ? normalizeShifts(safeJsonParse(hopeRow["希望JSON"], [])) : [],
+    hopes,
     ptRequests: ptRows.map((row) => ({
       requestId: normalizeKey(row["PT申請ID"]),
       date: normalizeDateValue(row["勤務日"]),
@@ -1181,16 +1186,23 @@ function rebuildMonthViews(spreadsheet, month, targetAreaIds) {
 function getMonthRecords(spreadsheet, month) {
   const submissions = readObjects(getSheetWithHeaders(getSubmissionLogSpreadsheet(), SHEETS.SUBMISSIONS))
     .filter((row) => normalizeMonthValue(row["対象月"]) === month)
-    .map((row) => ({
-      employeeId: row["従業員ID"],
-      name: row["氏名"],
-      homeAreaId: row["所属エリアID"],
-      homeStoreId: row["所属店舗ID"],
-      storeId: row["所属店舗ID"],
-      storeAreaId: row["所属エリアID"],
-      shifts: normalizeShifts(safeJsonParse(row["希望JSON"], [])),
-      source: "hope",
-    }));
+    .map((row) => {
+      const context = {
+        hopeId: row["希望ID"],
+        employeeId: row["従業員ID"],
+        month: row["対象月"],
+      };
+      return {
+        employeeId: row["従業員ID"],
+        name: row["氏名"],
+        homeAreaId: row["所属エリアID"],
+        homeStoreId: row["所属店舗ID"],
+        storeId: row["所属店舗ID"],
+        storeAreaId: row["所属エリアID"],
+        shifts: normalizeShifts(parseStoredShiftJson_(row["希望JSON"], context)),
+        source: "hope",
+      };
+    });
 
   const confirmed = readObjects(getSheetWithHeaders(getOverallSpreadsheet(), SHEETS.CONFIRMED))
     .filter((row) => normalizeMonthValue(row["対象月"]) === month)
@@ -2209,6 +2221,24 @@ function safeJsonParse(value, fallback) {
     return JSON.parse(value);
   } catch (error) {
     return fallback;
+  }
+}
+
+function parseStoredShiftJson_(value, context) {
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed) || parsed.some((shift) => !shift || typeof shift !== "object" || Array.isArray(shift))) {
+      throw new Error("INVALID_SHIFT_JSON_SHAPE");
+    }
+    return parsed;
+  } catch (error) {
+    console.error("[parseStoredShiftJson_] 保存済み希望JSONを解析できません", {
+      hopeId: normalizeKey(context && context.hopeId),
+      employeeId: normalizeKey(context && context.employeeId),
+      month: normalizeMonthValue(context && context.month),
+      errorName: error && error.name ? error.name : "Error",
+    });
+    throw new Error("保存済みシフト希望を読み取れません。管理者にデータ確認を依頼してください。");
   }
 }
 
