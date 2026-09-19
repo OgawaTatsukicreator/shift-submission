@@ -81,8 +81,7 @@ function doGet() {
   return HtmlService
     .createTemplateFromFile("GasApp")
     .evaluate()
-    .setTitle("シフト提出・希望確認")
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    .setTitle("シフト提出・希望確認");
 } //Webページに飛んだ際HTMLファイルを読み込んで画面を表示します
 
 function doPost(e) {
