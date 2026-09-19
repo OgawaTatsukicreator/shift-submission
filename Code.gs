@@ -1929,14 +1929,22 @@ function getSheetWithHeaders(spreadsheet, sheetName) {
     const sheet = spreadsheet.getSheetByName(sheetName) || spreadsheet.insertSheet(sheetName);
     const headers = HEADERS[sheetName];
     if (!headers) return sheet;
-    const current = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
-    const missing = sheet.getLastRow() === 0 || current.join("\t") !== headers.join("\t");
-    if (missing) {
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-      sheet.setFrozenRows(1);
-    }
-    return sheet;
+    return ensureSheetHeaders_(sheet, sheetName, headers);
   });
+}
+
+function ensureSheetHeaders_(sheet, sheetName, headers) {
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+    return sheet;
+  }
+  const current = sheet.getRange(1, 1, 1, headers.length).getValues()[0].map(normalizeKey);
+  const expected = headers.map(normalizeKey);
+  if (current.join("\t") !== expected.join("\t")) {
+    throw new Error(`${sheetName} の列見出しが想定と一致しません。既存データは変更していません。期待: ${headers.join(" / ")}、現在: ${current.join(" / ")}`);
+  }
+  return sheet;
 }
 
 function readObjects(sheet) {
@@ -2367,12 +2375,7 @@ function onEdit(e) {
 
 function getAdminSheetWithHeaders_(spreadsheet, sheetName, headers) {
   const sheet = spreadsheet.getSheetByName(sheetName) || spreadsheet.insertSheet(sheetName);
-  const current = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
-  if (sheet.getLastRow() === 0 || current.join("\t") !== headers.join("\t")) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sheet.setFrozenRows(1);
-  }
-  return sheet;
+  return ensureSheetHeaders_(sheet, sheetName, headers);
 }
 
 function applyAdminCheckboxes_(sheet) {
