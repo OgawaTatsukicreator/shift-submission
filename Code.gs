@@ -36,6 +36,7 @@ const SHEETS = {
   LOGIN_ACCOUNTS: "ログインアカウント",
   AUTH_SESSIONS: "ログインセッション",
   PASSWORD_SUMMARY: "従業員パスワードサマリ",
+  OPERATIONS: "操作処理状態",
 }; //スプシ内シート
 
 //
@@ -72,6 +73,7 @@ const HEADERS = {
   [SHEETS.LOGIN_ACCOUNTS]: ["従業員ID", "パスワードハッシュ", "パスワードソルト", "登録日時", "最終ログイン日時", "有効フラグ", "ログイン失敗回数", "ロック期限", "パスワード更新日時", "パスワード版"],
   [SHEETS.AUTH_SESSIONS]: ["トークンハッシュ", "従業員ID", "発行日時", "有効期限", "最終利用日時", "有効フラグ", "セッションID", "発行時パスワード版"],
   [SHEETS.PASSWORD_SUMMARY]: ["従業員ID", "パスワードハッシュ", "更新日時", "有効フラグ", "パスワード版"],
+  [SHEETS.OPERATIONS]: ["操作ID", "処理種別", "業務キー", "従業員ID", "ペイロードハッシュ", "状態", "保存状態", "結果JSON", "エラーコード", "作成日時", "更新日時"],
 }; //ヘッダー定義
 
 function doGet() {
@@ -658,54 +660,252 @@ function validateStoreArea_(store, area) {
   }
 }
 
+function createSubmissionOperation(payload) {
+  resetRequestCache_();
+  const auth = authenticateSession_(payload && payload.authToken);
+  const kind = normalizeKey(payload && payload.kind) === "pt" ? "PT_SUBMIT" : "SHIFT_SUBMIT";
+  validateOperationRequest_(kind, payload, auth.staff);
+  const descriptor = buildOperationDescriptor_(kind, payload, auth.staff);
+  const operationId = Utilities.getUuid();
+  const now = new Date();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getSheetWithHeaders(getSubmissionLogSpreadsheet(), SHEETS.OPERATIONS);
+    sheet.appendRow([
+      operationId,
+      kind,
+      descriptor.businessKey,
+      auth.staff.employeeId,
+      descriptor.payloadHash,
+      "READY",
+      "未保存",
+      "",
+      "",
+      now,
+      now,
+    ]);
+  } finally {
+    lock.releaseLock();
+  }
+  return { ok: true, operationId, kind, businessKey: descriptor.businessKey };
+}
+
+function getOperationStatus(query) {
+  resetRequestCache_();
+  const auth = authenticateSession_(query && query.authToken);
+  const operationId = normalizeKey(query && query.operationId);
+  if (!operationId) throw new Error("操作IDを確認できません。もう一度お試しください。");
+  const sheet = getSheetWithHeaders(getSubmissionLogSpreadsheet(), SHEETS.OPERATIONS);
+  const row = findRowByKeys(sheet, { 1: operationId });
+  if (!row) return { ok: true, operationId, status: "NOT_REGISTERED", saveState: "未保存" };
+  const values = sheet.getRange(row, 1, 1, HEADERS[SHEETS.OPERATIONS].length).getValues()[0];
+  if (normalizeKey(values[3]) !== auth.staff.employeeId) {
+    throw new Error("この操作の状態を確認する権限がありません。");
+  }
+  return operationStatusFromValues_(values);
+}
+
+function validateOperationRequest_(kind, payload, staff) {
+  if (kind === "SHIFT_SUBMIT") {
+    validateShiftPayload(payload);
+    assertShiftSubmissionWindow_(payload.month);
+    const store = findStore(payload.storeId || staff.primaryStoreId);
+    const area = findArea(payload.areaId || store.areaId);
+    validateStoreArea_(store, area);
+    assertStaffStoreAccess_(staff, area, store, false);
+    return;
+  }
+  validatePtPayload(payload);
+  const store = findStore(payload.workStoreId || payload.storeId || staff.primaryStoreId);
+  const area = findArea(payload.workAreaId || store.areaId);
+  validateStoreArea_(store, area);
+  assertStaffStoreAccess_(staff, area, store, true);
+}
+
+function buildOperationDescriptor_(kind, payload, staff) {
+  let businessKey;
+  let normalized;
+  if (kind === "SHIFT_SUBMIT") {
+    const month = validateMonthValue_(payload.month);
+    businessKey = `SHIFT:${month}:${staff.employeeId}`;
+    normalized = {
+      kind,
+      businessKey,
+      areaId: normalizeKey(payload.areaId),
+      storeId: normalizeKey(payload.storeId),
+      month,
+      notes: normalizeKey(payload.notes),
+      shifts: normalizeShifts(payload.shifts).map((shift) => ({
+        date: shift.date,
+        type: shift.type,
+        start: shift.start,
+        end: shift.end,
+      })),
+    };
+  } else {
+    const date = validateDateValue_(payload.date, "PT申請日");
+    const workStoreId = normalizeKey(payload.workStoreId || payload.storeId || staff.primaryStoreId);
+    businessKey = `PT:${staff.employeeId}:${date}:${workStoreId}`;
+    normalized = {
+      kind,
+      businessKey,
+      workAreaId: normalizeKey(payload.workAreaId || payload.areaId),
+      workStoreId,
+      date,
+      start: normalizeTime(payload.start),
+      end: normalizeTime(payload.end),
+      notes: normalizeKey(payload.notes),
+    };
+  }
+  return { businessKey, payloadHash: digestText_(JSON.stringify(normalized)) };
+}
+
+function claimOperation_(operationId, kind, payload, staff) {
+  const id = normalizeKey(operationId);
+  if (!id) throw new Error("操作IDを確認できません。画面を再読み込みしてからもう一度お試しください。");
+  const descriptor = buildOperationDescriptor_(kind, payload, staff);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getSheetWithHeaders(getSubmissionLogSpreadsheet(), SHEETS.OPERATIONS);
+    const row = findRowByKeys(sheet, { 1: id });
+    if (!row) throw new Error("操作IDの受付情報が見つかりません。もう一度お試しください。");
+    const values = sheet.getRange(row, 1, 1, HEADERS[SHEETS.OPERATIONS].length).getValues()[0];
+    if (
+      normalizeKey(values[1]) !== kind ||
+      normalizeKey(values[2]) !== descriptor.businessKey ||
+      normalizeKey(values[3]) !== staff.employeeId ||
+      normalizeKey(values[4]) !== descriptor.payloadHash
+    ) {
+      throw new Error("同じ操作IDで送信内容が変更されています。入力内容を確認して新しく送信してください。");
+    }
+    const status = normalizeKey(values[5]);
+    if (status === "COMPLETED") {
+      return { completed: true, result: safeJsonParse(values[7], {}) };
+    }
+    const updatedAt = toDate_(values[10]);
+    if (status === "PROCESSING" && updatedAt && Date.now() - updatedAt.getTime() < 2 * 60 * 1000) {
+      throw new Error("同じ内容を処理中です。再送せず、しばらくお待ちください。");
+    }
+    sheet.getRange(row, 6, 1, 6).setValues([["PROCESSING", normalizeKey(values[6]) || "未保存", values[7] || "", "", values[9] || new Date(), new Date()]]);
+    return { completed: false };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function finishOperation_(operationId, result) {
+  updateOperationState_(operationId, "COMPLETED", "保存済み", result, "");
+}
+
+function failOperation_(operationId, saveState, errorCode) {
+  updateOperationState_(operationId, "FAILED_RETRYABLE", saveState || "未保存", null, errorCode || "PROCESSING_ERROR");
+}
+
+function recordOperationFailureSafely_(operationId, saveState, errorCode) {
+  try {
+    failOperation_(operationId, saveState, errorCode);
+  } catch (stateError) {
+    console.error("[recordOperationFailureSafely_] 操作状態の失敗記録に失敗", {
+      operationId,
+      errorName: stateError && stateError.name ? stateError.name : "Error",
+    });
+  }
+}
+
+function updateOperationState_(operationId, status, saveState, result, errorCode) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getSheetWithHeaders(getSubmissionLogSpreadsheet(), SHEETS.OPERATIONS);
+    const row = findRowByKeys(sheet, { 1: operationId });
+    if (!row) return;
+    sheet.getRange(row, 6, 1, 6).setValues([[
+      status,
+      saveState,
+      result ? JSON.stringify(result) : "",
+      errorCode,
+      sheet.getRange(row, 10).getValue() || new Date(),
+      new Date(),
+    ]]);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function operationStatusFromValues_(values) {
+  return {
+    ok: true,
+    operationId: normalizeKey(values[0]),
+    kind: normalizeKey(values[1]),
+    businessKey: normalizeKey(values[2]),
+    status: normalizeKey(values[5]),
+    saveState: normalizeKey(values[6]),
+    result: safeJsonParse(values[7], null),
+    errorCode: normalizeKey(values[8]),
+    updatedAt: toIsoString_(values[10]),
+  };
+}
+
 function submitShift(payload) {
   resetRequestCache_();
   if (!ACCEPTING) throw new Error("現在、シフト提出の受付は停止中です。");
   const auth = authenticateSession_(payload && payload.authToken);
   validateShiftPayload(payload);
   assertShiftSubmissionWindow_(payload.month);
-  
-  // サーバー側で入力内容、締切、本人の提出先権限を検証する。
-
-  const logSpreadsheet = getSubmissionLogSpreadsheet();
-  const overallSpreadsheet = getOverallSpreadsheet();
-  const sheet = getSheetWithHeaders(logSpreadsheet, SHEETS.SUBMISSIONS);
   const staff = auth.staff;
   const store = findStore(payload.storeId || staff.primaryStoreId);
   const area = findArea(payload.areaId || store.areaId);
   validateStoreArea_(store, area);
   assertStaffStoreAccess_(staff, area, store, false);
-  const month = normalizeMonthValue(payload.month);
-  const shifts = normalizeShifts(payload.shifts);
-  const summary = summarize(shifts);
-  const hopeId = makeSubmissionId(month, staff.employeeId);
-  const row = findRowByKeys(sheet, { 1: hopeId });
-  const previousAreaId = row ? normalizeKey(sheet.getRange(row, 5).getValue()) : "";
-  const values = [
-    hopeId,
-    month,
-    staff.employeeId,
-    staff.name,
-    area.areaId,
-    store.storeId,
-    new Date(),
-    "提出済み",
-    summary.work,
-    summary.holiday,
-    summary.paid,
-    summary.pt,
-    summary.blank,
-    JSON.stringify(shifts),
-    formatShifts(shifts),
-    normalizeKey(payload.notes),
-  ];
+  const operationId = normalizeKey(payload.operationId);
+  const claim = claimOperation_(operationId, "SHIFT_SUBMIT", payload, staff);
+  if (claim.completed) return { ...claim.result, replayed: true };
 
-  writeRow(sheet, row, values);
-  SpreadsheetApp.flush();
-  rebuildMonthViews(overallSpreadsheet, month, [area.areaId, previousAreaId]);
-  SpreadsheetApp.flush();
+  let saveState = "未保存";
+  try {
+    const logSpreadsheet = getSubmissionLogSpreadsheet();
+    const overallSpreadsheet = getOverallSpreadsheet();
+    const sheet = getSheetWithHeaders(logSpreadsheet, SHEETS.SUBMISSIONS);
+    const month = normalizeMonthValue(payload.month);
+    const shifts = normalizeShifts(payload.shifts);
+    const summary = summarize(shifts);
+    const hopeId = makeSubmissionId(month, staff.employeeId);
+    const row = findRowByKeys(sheet, { 1: hopeId });
+    const previousAreaId = row ? normalizeKey(sheet.getRange(row, 5).getValue()) : "";
+    const values = [
+      hopeId,
+      month,
+      staff.employeeId,
+      staff.name,
+      area.areaId,
+      store.storeId,
+      new Date(),
+      "提出済み",
+      summary.work,
+      summary.holiday,
+      summary.paid,
+      summary.pt,
+      summary.blank,
+      JSON.stringify(shifts),
+      formatShifts(shifts),
+      normalizeKey(payload.notes),
+    ];
 
-  return { ok: true, updated: Boolean(row), month, hopeId };
+    writeRow(sheet, row, values);
+    SpreadsheetApp.flush();
+    saveState = "部分保存";
+    rebuildMonthViews(overallSpreadsheet, month, [area.areaId, previousAreaId]);
+    SpreadsheetApp.flush();
+
+    const result = { ok: true, updated: Boolean(row), month, hopeId, operationId };
+    finishOperation_(operationId, result);
+    return result;
+  } catch (error) {
+    recordOperationFailureSafely_(operationId, saveState, "SHIFT_SUBMIT_FAILED");
+    throw error;
+  }
 }
 
 function submitPtRequest(payload) {
@@ -713,55 +913,69 @@ function submitPtRequest(payload) {
   const auth = authenticateSession_(payload && payload.authToken);
   validatePtPayload(payload);
 
-  const logSpreadsheet = getSubmissionLogSpreadsheet();
-  const overallSpreadsheet = getOverallSpreadsheet();
-  const ptSheet = getSheetWithHeaders(logSpreadsheet, SHEETS.PT_REQUESTS);
   const staff = auth.staff;
   const workStore = findStore(payload.workStoreId || payload.storeId || staff.primaryStoreId);
   const workArea = findArea(payload.workAreaId || workStore.areaId);
   validateStoreArea_(workStore, workArea);
   assertStaffStoreAccess_(staff, workArea, workStore, true);
-  const workDate = normalizeDateValue(payload.date);
-  const start = normalizeTime(payload.start || DEFAULT_START);
-  const end = normalizeTime(payload.end || DEFAULT_END);
-  const requestId = `PT-${staff.employeeId}-${workDate}-${Date.now()}`;
-  const status = "自動確定";
+  const operationId = normalizeKey(payload.operationId);
+  const claim = claimOperation_(operationId, "PT_SUBMIT", payload, staff);
+  if (claim.completed) return { ...claim.result, replayed: true };
 
-  ptSheet.appendRow([
-    requestId,
-    staff.employeeId,
-    staff.name,
-    staff.primaryStoreId,
-    workArea.areaId,
-    workStore.storeId,
-    workDate,
-    start,
-    end,
-    new Date(),
-    status,
-    normalizeKey(payload.notes),
-  ]);
+  let saveState = "未保存";
+  try {
+    const logSpreadsheet = getSubmissionLogSpreadsheet();
+    const overallSpreadsheet = getOverallSpreadsheet();
+    const ptSheet = getSheetWithHeaders(logSpreadsheet, SHEETS.PT_REQUESTS);
+    const workDate = normalizeDateValue(payload.date);
+    const start = normalizeTime(payload.start || DEFAULT_START);
+    const end = normalizeTime(payload.end || DEFAULT_END);
+    const requestId = `PT-${operationId}`;
+    const status = "自動確定";
+    const ptRow = findRowByKeys(ptSheet, { 1: requestId });
 
-  const confirmed = {
-    month: workDate.slice(0, 7),
-    date: workDate,
-    employeeId: staff.employeeId,
-    name: staff.name,
-    homeAreaId: staff.primaryAreaId,
-    homeStoreId: staff.primaryStoreId,
-    workAreaId: workArea.areaId,
-    workStoreId: workStore.storeId,
-    start,
-    end,
-    type: "PT",
-    source: "PT申請",
-    confirmerId: staff.employeeId,
-  };
-  upsertConfirmedShift(overallSpreadsheet, confirmed);
-  appendChangeLog(overallSpreadsheet, "PT申請", requestId, "", JSON.stringify(confirmed), "PT自動確定", staff.employeeId);
-  rebuildMonthViews(overallSpreadsheet, confirmed.month, [workArea.areaId]);
+    writeRow(ptSheet, ptRow, [
+      requestId,
+      staff.employeeId,
+      staff.name,
+      staff.primaryStoreId,
+      workArea.areaId,
+      workStore.storeId,
+      workDate,
+      start,
+      end,
+      new Date(),
+      status,
+      normalizeKey(payload.notes),
+    ]);
+    saveState = "部分保存";
 
-  return { ok: true, status, requestId, confirmed };
+    const confirmed = {
+      month: workDate.slice(0, 7),
+      date: workDate,
+      employeeId: staff.employeeId,
+      name: staff.name,
+      homeAreaId: staff.primaryAreaId,
+      homeStoreId: staff.primaryStoreId,
+      workAreaId: workArea.areaId,
+      workStoreId: workStore.storeId,
+      start,
+      end,
+      type: "PT",
+      source: "PT申請",
+      confirmerId: staff.employeeId,
+    };
+    upsertConfirmedShift(overallSpreadsheet, confirmed);
+    appendChangeLog(overallSpreadsheet, "PT申請", requestId, "", JSON.stringify(confirmed), "PT自動確定", staff.employeeId, `LOG-${operationId}-PT`);
+    rebuildMonthViews(overallSpreadsheet, confirmed.month, [workArea.areaId]);
+
+    const result = { ok: true, status, requestId, confirmed, operationId };
+    finishOperation_(operationId, result);
+    return result;
+  } catch (error) {
+    recordOperationFailureSafely_(operationId, saveState, "PT_SUBMIT_FAILED");
+    throw error;
+  }
 }
 
 /** ログイン中の本人が提出した月間希望とPT申請だけを返す。 */
@@ -873,7 +1087,7 @@ function setupMasterSheets() {
     SHEETS.FILES,
     SHEETS.PASSWORD_SUMMARY,
   ].forEach((sheetName) => getSheetWithHeaders(db, sheetName));
-  [SHEETS.SUBMISSIONS, SHEETS.PT_REQUESTS, SHEETS.LOGIN_ACCOUNTS, SHEETS.AUTH_SESSIONS]
+  [SHEETS.SUBMISSIONS, SHEETS.PT_REQUESTS, SHEETS.LOGIN_ACCOUNTS, SHEETS.AUTH_SESSIONS, SHEETS.OPERATIONS]
     .forEach((sheetName) => getSheetWithHeaders(log, sheetName));
   getSheetWithHeaders(area, SHEETS.FILES);
 
@@ -1552,9 +1766,12 @@ function findRowByKeys(sheet, keyMap) {
   return null;
 }
 
-function appendChangeLog(spreadsheet, type, targetId, before, after, reason, userId) {
-  getSheetWithHeaders(spreadsheet, SHEETS.CHANGE_LOG).appendRow([
-    `LOG-${Date.now()}`,
+function appendChangeLog(spreadsheet, type, targetId, before, after, reason, userId, changeId) {
+  const sheet = getSheetWithHeaders(spreadsheet, SHEETS.CHANGE_LOG);
+  const resolvedChangeId = normalizeKey(changeId) || `LOG-${Date.now()}`;
+  const row = changeId ? findRowByKeys(sheet, { 1: resolvedChangeId }) : null;
+  writeRow(sheet, row, [
+    resolvedChangeId,
     type,
     targetId,
     before,
