@@ -1184,7 +1184,8 @@
       const PT_MAX_TIME = "22:00";
       const DEADLINE_DAY = 15;
       const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
-      const storageKey = "shift-form-draft-v2";
+      const storageKey = "shift-form-draft-v3";
+      const legacyStorageKey = "shift-form-draft-v2";
       const authStorageKey = "shift-auth-session-v1";
       const state = {
         areas: [],
@@ -1260,8 +1261,8 @@
         resultClose: document.querySelector("#resultClose"),
       };
       let pendingConfirmAction = null;
-      let suppressNextResetConfirm = false;
       let passwordChangePending = false;
+      let activeDraftMonth = "";
 
       function setMessage(node, text, type = "") {
         node.textContent = text;
@@ -1935,23 +1936,67 @@
         return Object.fromEntries(shifts.map((shift) => [shift.date, shift]));
       }
 
-      function getDraftStorageKey() {
-        return state.session ? `${storageKey}:${state.session.employeeId}` : storageKey;
+      function getDraftStorageKey(month = elements.month.value) {
+        const employeeId = state.session ? state.session.employeeId : "anonymous";
+        return `${storageKey}:${employeeId}:${month || "unknown"}`;
       }
 
-      function saveDraft() {
+      function toDraftData(payload) {
+        return {
+          schemaVersion: 3,
+          areaId: payload.areaId || "",
+          storeId: payload.storeId || "",
+          employeeId: payload.employeeId || "",
+          name: payload.name || "",
+          month: payload.month || "",
+          notes: payload.notes || "",
+          shifts: Array.isArray(payload.shifts) ? payload.shifts : [],
+        };
+      }
+
+      function persistDraft(payload) {
+        const draft = toDraftData(payload);
+        if (!draft.month) return;
+        localStorage.setItem(getDraftStorageKey(draft.month), JSON.stringify(draft));
+      }
+
+      function migrateLegacyDraft() {
+        if (!state.session) return;
+        const legacyKey = `${legacyStorageKey}:${state.session.employeeId}`;
+        const saved = localStorage.getItem(legacyKey);
+        if (!saved) return;
+        try {
+          const data = JSON.parse(saved);
+          if (data && /^\d{4}-\d{2}$/.test(data.month || "")) {
+            const destinationKey = getDraftStorageKey(data.month);
+            if (!localStorage.getItem(destinationKey)) persistDraft(data);
+          }
+        } catch (error) {
+          console.warn("[migrateLegacyDraft] 旧下書きを読み取れなかったため削除", error);
+        } finally {
+          localStorage.removeItem(legacyKey);
+        }
+      }
+
+      function saveDraft(monthOverride = "") {
         // 入力中の内容をブラウザのローカルストレージに保存する。
         if (!state.session || !elements.calendar.children.length) return;
-        console.log("[saveDraft] 下書き保存");
-        localStorage.setItem(getDraftStorageKey(), JSON.stringify(collectPayload()));
+        const payload = collectPayload();
+        if (typeof monthOverride === "string" && monthOverride) payload.month = monthOverride;
+        console.log("[saveDraft] 下書き保存", { month: payload.month });
+        persistDraft(payload);
       }
 
-      function restoreDraft() {
+      function restoreDraft(monthValue = elements.month.value) {
         // ローカルストレージから下書きを復元する。
-        console.log("[restoreDraft] 下書き復元開始");
-        const saved = localStorage.getItem(getDraftStorageKey());
+        const month = /^\d{4}-\d{2}$/.test(monthValue || "") ? monthValue : getDefaultMonth();
+        elements.month.value = month;
+        console.log("[restoreDraft] 下書き復元開始", { month });
+        const saved = localStorage.getItem(getDraftStorageKey(month));
         if (!saved) {
+          elements.shiftForm.elements.notes.value = "";
           renderCalendar();
+          activeDraftMonth = month;
           console.log("[restoreDraft] 下書きなし");
           return;
         }
@@ -1959,8 +2004,10 @@
         try {
           data = JSON.parse(saved);
         } catch (error) {
-          localStorage.removeItem(getDraftStorageKey());
+          localStorage.removeItem(getDraftStorageKey(month));
+          elements.shiftForm.elements.notes.value = "";
           renderCalendar();
+          activeDraftMonth = month;
           console.warn("[restoreDraft] 保存データが壊れていたため削除", error);
           return;
         }
@@ -1970,18 +2017,17 @@
         const hasSavedStore = storesByArea(elements.area.value).some((store) => store.storeId === data.storeId);
         if (hasSavedStore) elements.store.value = data.storeId;
         syncEmployeeOptions(elements.store, elements.employee);
-        elements.month.value = data.month || elements.month.value || getDefaultMonth();
         elements.shiftForm.elements.notes.value = data.notes || "";
         renderCalendar(groupShiftsByDate(data.shifts));
-        console.log("[restoreDraft] 下書き復元完了", { month: elements.month.value });
+        activeDraftMonth = month;
+        console.log("[restoreDraft] 下書き復元完了", { month });
       }
 
       function moveMonth(amount) {
         const current = parseMonth(elements.month.value);
+        saveDraft(activeDraftMonth || elements.month.value);
         current.setMonth(current.getMonth() + amount);
-        elements.month.value = toMonthValue(current);
-        renderCalendar(groupShiftsByDate(collectPayload().shifts));
-        saveDraft();
+        restoreDraft(toMonthValue(current));
       }
 
       function fillAll(mode) {
@@ -2058,7 +2104,7 @@
         google.script.run
           .withSuccessHandler((result) => {
             console.log("[executeSubmitShift] 提出成功", result);
-            localStorage.setItem(getDraftStorageKey(), JSON.stringify(payload));
+            persistDraft(payload);
             const title = result.updated ? "シフト希望を更新しました" : "シフト希望を提出しました";
             const body = `${state.session.name}さんの${payload.month}分を保存しました。希望確認から提出内容を確認できます。`;
             setMessage(elements.message, title, "success");
@@ -2074,10 +2120,6 @@
       }
 
       function confirmClearShift(event) {
-        if (suppressNextResetConfirm) {
-          suppressNextResetConfirm = false;
-          return;
-        }
         event.preventDefault();
         openConfirm({
           title: "入力内容をクリアしますか",
@@ -2089,11 +2131,10 @@
       }
 
       function executeClearShift() {
-        localStorage.removeItem(getDraftStorageKey());
-        suppressNextResetConfirm = true;
-        elements.shiftForm.reset();
-        elements.month.value = getDefaultMonth();
+        localStorage.removeItem(getDraftStorageKey(elements.month.value));
+        elements.shiftForm.elements.notes.value = "";
         renderCalendar();
+        activeDraftMonth = elements.month.value;
         setMessage(elements.message, "入力内容をクリアしました。");
         console.log("[executeClearShift] 入力クリア完了");
       }
@@ -2263,6 +2304,7 @@
         elements.hopeMonth.value = elements.month.value;
         buildHourOptions(elements.ptStart, "開始", PT_MIN_TIME, PT_MAX_TIME, DEFAULT_START);
         buildHourOptions(elements.ptEnd, "終了", PT_MIN_TIME, PT_MAX_TIME, DEFAULT_END);
+        migrateLegacyDraft();
         restoreDraft();
         elements.status.textContent = data.accepting ? "受付中" : "受付停止中";
         console.log("[applyInitialData] 初期データ反映完了", {
@@ -2347,8 +2389,10 @@
       });
       elements.employee.addEventListener("input", saveDraft);
       elements.month.addEventListener("input", () => {
-        renderCalendar(groupShiftsByDate(collectPayload().shifts));
-        saveDraft();
+        const nextMonth = elements.month.value;
+        if (!/^\d{4}-\d{2}$/.test(nextMonth)) return;
+        saveDraft(activeDraftMonth);
+        restoreDraft(nextMonth);
       });
       elements.shiftForm.addEventListener("input", saveDraft);
       elements.shiftForm.addEventListener("submit", submitShift);
