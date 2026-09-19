@@ -35,6 +35,7 @@ const SHEETS = {
   STAFF: "従業員マスタ",
   STAFF_STORES: "従業員店舗設定",
   FILES: "管理対象ファイル",
+  BUSINESS_SETTINGS: "業務設定",
   SUBMISSIONS: "シフト希望",
   PT_REQUESTS: "PT申請",
   CONFIRMED: "確定シフト",
@@ -74,6 +75,7 @@ const HEADERS = {
   [SHEETS.STAFF]: ["従業員ID", "氏名", "主所属エリアID", "主所属店舗ID", "雇用区分", "役職", "権限", "表示順", "有効フラグ"],
   [SHEETS.STAFF_STORES]: ["従業員ID", "エリアID", "店舗ID", "関係区分", "通常表示", "ヘルプ候補表示", "有効フラグ"],
   [SHEETS.FILES]: ["管理単位", "エリアID", "店舗ID", "スプレッドシートID", "用途", "編集権限者", "有効フラグ"],
+  [SHEETS.BUSINESS_SETTINGS]: ["設定キー", "適用範囲", "適用先ID", "設定値", "有効開始日", "有効終了日", "有効フラグ"],
   [SHEETS.SUBMISSIONS]: ["希望ID", "対象月", "従業員ID", "氏名", "所属エリアID", "所属店舗ID", "提出日時", "提出状態", "勤務日数", "休み日数", "有給日数", "PT日数", "未入力日数", "希望JSON", "希望表示", "備考"],
   [SHEETS.PT_REQUESTS]: ["PT申請ID", "従業員ID", "氏名", "所属店舗ID", "勤務エリアID", "勤務店舗ID", "勤務日", "開始時刻", "終了時刻", "申請日時", "状態", "備考"],
   [SHEETS.CONFIRMED]: ["確定シフトID", "対象月", "日付", "従業員ID", "氏名", "所属エリアID", "所属店舗ID", "勤務エリアID", "勤務店舗ID", "開始時刻", "終了時刻", "区分", "確定元", "確定日時", "確定者ID"],
@@ -1546,8 +1548,10 @@ function setupMasterSheets() {
     SHEETS.STAFF,
     SHEETS.STAFF_STORES,
     SHEETS.FILES,
+    SHEETS.BUSINESS_SETTINGS,
     SHEETS.PASSWORD_SUMMARY,
   ].forEach((sheetName) => getSheetWithHeaders(db, sheetName));
+  ensureDefaultBusinessSettings_(getSheetWithHeaders(db, SHEETS.BUSINESS_SETTINGS));
   [SHEETS.SUBMISSIONS, SHEETS.PT_REQUESTS, SHEETS.LOGIN_ACCOUNTS, SHEETS.AUTH_SESSIONS, SHEETS.OPERATIONS, SHEETS.REGISTRATION_CODES, SHEETS.TECHNICAL_ERRORS]
     .forEach((sheetName) => getSheetWithHeaders(log, sheetName));
   getSheetWithHeaders(area, SHEETS.FILES);
@@ -1671,14 +1675,20 @@ function buildWeeklyMatrix(records, month, label, areaId) {
     const dayColumns = [];
     let column = 3;
     week.forEach((day) => {
-      const closed = day.weekday === "金";
-      const dayStores = closed ? [{ storeId: "CLOSED", shortName: "全店休み", areaId: "" }] : stores;
+      const configuredStores = stores.map((store) => ({
+        ...store,
+        closed: isStoreClosedOnDate_(store.storeId, day.dateValue, day.weekday),
+      }));
+      const closed = configuredStores.length > 0 && configuredStores.every((store) => store.closed);
+      const dayStores = closed
+        ? [{ storeId: "CLOSED", shortName: "全店休み", areaId: "", closed: true }]
+        : configuredStores;
       const span = dayStores.length;
       dateRow[column - 1] = day.label;
       weekdayRow[column - 1] = day.weekday;
       dayStores.forEach((store, index) => {
         storeRow[column - 1 + index] = store.shortName || store.storeName;
-        countRow[column - 1 + index] = closed ? "" : countWorking(records, day.dateValue, store.storeId);
+        countRow[column - 1 + index] = store.closed ? "" : countWorking(records, day.dateValue, store.storeId);
       });
       dayColumns.push({ ...day, startColumn: column, span, stores: dayStores, closed });
       column += span;
@@ -1695,7 +1705,7 @@ function buildWeeklyMatrix(records, month, label, areaId) {
         row[1] = staff.name;
         dayColumns.forEach((day) => {
           day.stores.forEach((store, storeIndex) => {
-            row[day.startColumn - 1 + storeIndex] = day.closed ? "" : getShiftCell(records, staff.employeeId, staff.name, day.dateValue, store.storeId);
+            row[day.startColumn - 1 + storeIndex] = store.closed ? "" : getShiftCell(records, staff.employeeId, staff.name, day.dateValue, store.storeId);
           });
         });
         values.push(row);
@@ -1778,6 +1788,10 @@ function parseConfirmedCells(sheet, month, confirmerId) {
         const color = normalizeColor(backgrounds[staffRow][c]);
         const cellText = normalizeKey(values[staffRow][c]);
         const cellLabel = toA1Notation_(staffRow + 1, c + 1);
+        if (color === COLORS.CLOSED) {
+          if (cellText) errors.push(`${cellLabel}: 店休日へ勤務内容を入力できません`);
+          continue;
+        }
         if (color === COLORS.OFF) {
           if (cellText && cellText !== "NG") errors.push(`${cellLabel}: 赤セルへ勤務内容を入力できません`);
           continue;
@@ -2251,6 +2265,60 @@ function getStaffStoreSettings() {
   ));
 }
 
+function ensureDefaultBusinessSettings_(sheet) {
+  const exists = readObjects(sheet).some((row) => normalizeKey(row["設定キー"]) === "STORE_CLOSED_RULE");
+  if (!exists) sheet.appendRow(["STORE_CLOSED_RULE", "GLOBAL", "", "金", "", "", true]);
+}
+
+function getBusinessSettings_() {
+  return memoizeRequest_("master:business-settings", () => {
+    const sheet = getSheetWithHeaders(getDbSpreadsheet(), SHEETS.BUSINESS_SETTINGS);
+    const rows = readObjects(sheet);
+    if (!rows.some((row) => normalizeKey(row["設定キー"]) === "STORE_CLOSED_RULE")) {
+      throw new Error("業務設定にSTORE_CLOSED_RULEがありません。管理者が初期シート作成を実行してください。");
+    }
+    return rows.filter((row) => toBoolean(row["有効フラグ"])).map((row) => {
+      if (normalizeKey(row["設定キー"]) !== "STORE_CLOSED_RULE") return row;
+      const scope = normalizeKey(row["適用範囲"]).toUpperCase();
+      if (!["GLOBAL", "STORE"].includes(scope)) throw new Error("業務設定のSTORE_CLOSED_RULEは適用範囲をGLOBALまたはSTOREにしてください。");
+      if (scope === "STORE" && !normalizeKey(row["適用先ID"])) throw new Error("店舗別の店休日設定には適用先IDが必要です。");
+      parseStoreClosedRuleTokens_(row["設定値"]);
+      const start = row["有効開始日"] ? validateDateValue_(row["有効開始日"], "店休日設定の有効開始日") : "";
+      const end = row["有効終了日"] ? validateDateValue_(row["有効終了日"], "店休日設定の有効終了日") : "";
+      if (start && end && start > end) throw new Error("店休日設定の有効開始日は有効終了日以前にしてください。");
+      return row;
+    });
+  });
+}
+
+function parseStoreClosedRuleTokens_(value) {
+  const tokens = normalizeKey(value).split(/[、,\s]+/).filter(Boolean);
+  if (!tokens.length) throw new Error("店休日設定の設定値を入力してください。休業なしはNONEを指定します。");
+  tokens.forEach((token) => {
+    if (["日", "月", "火", "水", "木", "金", "土"].includes(token) || token.toUpperCase() === "NONE") return;
+    validateDateValue_(token, "店休日設定の日付");
+  });
+  return tokens.map((token) => token.toUpperCase() === "NONE" ? "NONE" : token);
+}
+
+function isStoreClosedOnDate_(storeId, dateValue, weekday) {
+  const date = validateDateValue_(dateValue, "店休日判定日");
+  const settings = getBusinessSettings_().filter((row) => {
+    if (normalizeKey(row["設定キー"]) !== "STORE_CLOSED_RULE") return false;
+    const start = normalizeDateValue(row["有効開始日"]);
+    const end = normalizeDateValue(row["有効終了日"]);
+    return (!start || date >= start) && (!end || date <= end);
+  });
+  const storeRules = settings.filter((row) => (
+    normalizeKey(row["適用範囲"]).toUpperCase() === "STORE" &&
+    normalizeKey(row["適用先ID"]) === normalizeKey(storeId)
+  ));
+  const globalRules = settings.filter((row) => normalizeKey(row["適用範囲"]).toUpperCase() === "GLOBAL");
+  const rules = storeRules.length ? storeRules : globalRules;
+  const tokens = rules.flatMap((row) => parseStoreClosedRuleTokens_(row["設定値"]));
+  return tokens.includes(normalizeKey(weekday)) || tokens.includes(date);
+}
+
 function findStaff(employeeId, name) {
   const key = normalizeKey(employeeId);
   const nameKey = normalizeKey(name);
@@ -2442,7 +2510,14 @@ function applyWeeklyMatrixFormatting(sheet, matrix) {
       }
       if (day.closed) {
         sheet.getRange(section.storeRow, day.startColumn, 1, 1).setBackground(COLORS.CLOSED).setFontWeight("bold");
-        sheet.getRange(section.staffStartRow, day.startColumn, section.endRow - section.staffStartRow + 1, 1).setBackground("#f3f3f3");
+        sheet.getRange(section.staffStartRow, day.startColumn, section.endRow - section.staffStartRow + 1, 1).setBackground(COLORS.CLOSED);
+      } else {
+        day.stores.forEach((store, storeIndex) => {
+          if (!store.closed) return;
+          const closedColumn = day.startColumn + storeIndex;
+          sheet.getRange(section.storeRow, closedColumn, 1, 1).setBackground(COLORS.CLOSED).setFontWeight("bold");
+          sheet.getRange(section.staffStartRow, closedColumn, section.endRow - section.staffStartRow + 1, 1).setBackground(COLORS.CLOSED);
+        });
       }
       const dayHeight = section.endRow - section.dateRow + 1;
       sheet.getRange(section.dateRow, day.startColumn, dayHeight, 1).setBorder(null, true, null, null, null, null, "#000000", SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
@@ -2501,7 +2576,10 @@ function splitIntoWeeks(days) {
 }
 
 function getWeekColumnSpan(week, stores) {
-  return week.reduce((total, day) => total + (day.weekday === "金" ? 1 : stores.length), 0);
+  return week.reduce((total, day) => {
+    const allClosed = stores.length > 0 && stores.every((store) => isStoreClosedOnDate_(store.storeId, day.dateValue, day.weekday));
+    return total + (allClosed ? 1 : stores.length);
+  }, 0);
 }
 
 function mergeRecordSources(submissions, confirmed) {
