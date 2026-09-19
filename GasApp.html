@@ -1192,6 +1192,7 @@
         stores: [],
         staff: [],
         staffStoreSettings: [],
+        defaultSubmissionMonth: "",
         session: null,
         authToken: "",
         verifiedEmployee: null,
@@ -1657,7 +1658,9 @@
 
       function getDefaultMonth() {
         const today = new Date();
-        return toMonthValue(new Date(today.getFullYear(), today.getMonth() + 1, 1));
+        if (state.defaultSubmissionMonth) return state.defaultSubmissionMonth;
+        const offset = today.getDate() <= DEADLINE_DAY ? 1 : 2;
+        return toMonthValue(new Date(today.getFullYear(), today.getMonth() + offset, 1));
       }
 
       function toMonthValue(date) {
@@ -1790,8 +1793,15 @@
         });
       }
 
-      function storesByArea(areaId) {
-        return state.stores.filter((store) => store.areaId === areaId);
+      function storesByArea(areaId, help = false) {
+        if (!state.session) return state.stores.filter((store) => store.areaId === areaId);
+        const allowedStoreIds = new Set(
+          state.staffStoreSettings
+            .filter((setting) => setting.employeeId === state.session.employeeId && (help ? setting.helpCandidate : setting.normalDisplay))
+            .map((setting) => setting.storeId)
+        );
+        if (state.session.primaryStoreId) allowedStoreIds.add(state.session.primaryStoreId);
+        return state.stores.filter((store) => store.areaId === areaId && allowedStoreIds.has(store.storeId));
       }
 
       function employeesByStore(storeId, help = false) {
@@ -1804,7 +1814,7 @@
       function syncStoreOptions(areaSelect, storeSelect, employeeSelect, help = false) {
         // エリア選択に応じて店舗候補を更新し、続けて名前候補も更新する。
         console.log("[syncStoreOptions] 店舗候補更新", { areaId: areaSelect.value, help });
-        const stores = storesByArea(areaSelect.value);
+        const stores = storesByArea(areaSelect.value, help);
         fillSelect(storeSelect, stores, "店舗を選択", "storeId", "storeName");
         if (stores.length) {
           storeSelect.value = stores[0].storeId;
@@ -1835,7 +1845,7 @@
           : (state.areas[0] ? state.areas[0].areaId : "");
         areaSelect.value = defaultAreaId;
         syncStoreOptions(areaSelect, storeSelect, employeeSelect, help);
-        if (storesByArea(defaultAreaId).some((store) => store.storeId === storeId)) {
+        if (storesByArea(defaultAreaId, help).some((store) => store.storeId === storeId)) {
           storeSelect.value = storeId;
         }
         syncEmployeeOptions(storeSelect, employeeSelect, help);
@@ -2296,6 +2306,7 @@
           stores: data.stores,
           staff: data.staff,
           staffStoreSettings: data.staffStoreSettings,
+          defaultSubmissionMonth: data.defaultSubmissionMonth,
         });
         [elements.area, elements.ptArea].forEach((select) => fillSelect(select, state.areas, "エリアを選択", "areaId", "areaName"));
         setLocationDefaults(elements.area, elements.store, elements.employee, state.session.primaryAreaId, state.session.primaryStoreId);
@@ -2307,6 +2318,9 @@
         migrateLegacyDraft();
         restoreDraft();
         elements.status.textContent = data.accepting ? "受付中" : "受付停止中";
+        const shiftSubmitButton = elements.shiftForm.querySelector('[type="submit"]');
+        shiftSubmitButton.disabled = !data.accepting;
+        if (!data.accepting) setMessage(elements.message, "現在、シフト希望の受付は停止中です。入力内容は下書きに保存できます。", "error");
         console.log("[applyInitialData] 初期データ反映完了", {
           areas: state.areas.length,
           stores: state.stores.length,
@@ -2318,6 +2332,9 @@
         const source = data || {};
         return {
           accepting: source.accepting !== false,
+          defaultSubmissionMonth: /^\d{4}-\d{2}$/.test(source.defaultSubmissionMonth || "")
+            ? source.defaultSubmissionMonth
+            : "",
           areas: Array.isArray(source.areas) ? source.areas : [],
           stores: Array.isArray(source.stores) ? source.stores : [],
           staff: Array.isArray(source.staff) ? source.staff : [],

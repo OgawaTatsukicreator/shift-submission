@@ -16,6 +16,8 @@ const SESSION_LIFETIME_HOURS = 12;
 const LOGIN_MAX_FAILURES = 5;
 const LOGIN_LOCK_MINUTES = 15;
 const PASSWORD_HASH_ROUNDS = 1200;
+const SHIFT_TIME_ZONE = "Asia/Tokyo";
+const SHIFT_INPUT_TYPES = ["未入力", "勤務可能", "休み希望", "有給希望", "PT"];
 
 // 同じGAS実行内だけで読込結果を共有し、次のリクエストには持ち越さない。
 let requestCache_ = {};
@@ -281,6 +283,7 @@ function buildInitialData_(staff) {
     ok: true,
     accepting: ACCEPTING,
     deadlineDay: DEADLINE_DAY,
+    defaultSubmissionMonth: getDefaultShiftMonth_(),
     defaultStart: DEFAULT_START,
     defaultEnd: DEFAULT_END,
     areas: getAreas(),
@@ -540,9 +543,10 @@ function submitShift(payload) {
   resetRequestCache_();
   if (!ACCEPTING) throw new Error("現在、シフト提出の受付は停止中です。");
   const auth = authenticateSession_(payload && payload.authToken);
-  validateShiftPayload(payload);  
+  validateShiftPayload(payload);
+  assertShiftSubmissionWindow_(payload.month);
   
-  //validateShiftPayload:受付期間中チェックし送信されたデータの不備を検証。
+  // サーバー側で入力内容、締切、本人の提出先権限を検証する。
 
   const logSpreadsheet = getSubmissionLogSpreadsheet();
   const overallSpreadsheet = getOverallSpreadsheet();
@@ -551,6 +555,7 @@ function submitShift(payload) {
   const store = findStore(payload.storeId || staff.primaryStoreId);
   const area = findArea(payload.areaId || store.areaId);
   validateStoreArea_(store, area);
+  assertStaffStoreAccess_(staff, area, store, false);
   const month = normalizeMonthValue(payload.month);
   const shifts = normalizeShifts(payload.shifts);
   const summary = summarize(shifts);
@@ -596,6 +601,7 @@ function submitPtRequest(payload) {
   const workStore = findStore(payload.workStoreId || payload.storeId || staff.primaryStoreId);
   const workArea = findArea(payload.workAreaId || workStore.areaId);
   validateStoreArea_(workStore, workArea);
+  assertStaffStoreAccess_(staff, workArea, workStore, true);
   const workDate = normalizeDateValue(payload.date);
   const start = normalizeTime(payload.start || DEFAULT_START);
   const end = normalizeTime(payload.end || DEFAULT_END);
@@ -988,6 +994,20 @@ function validateShiftPayload(payload) {
   if (!payload.areaId) throw new Error("エリアを選択してください。");
   if (!payload.month) throw new Error("対象月を選択してください。");
   if (!Array.isArray(payload.shifts) || payload.shifts.length === 0) throw new Error("月間シフトを入力してください。");
+  const month = validateMonthValue_(payload.month);
+  const expectedDays = daysInMonth_(month);
+  if (payload.shifts.length !== expectedDays) {
+    throw new Error(`${month}の全${expectedDays}日分を入力してください。画面を再読み込みしてからもう一度お試しください。`);
+  }
+  const seenDates = new Set();
+  payload.shifts.forEach((shift) => {
+    const date = validateDateValue_(shift && shift.date, "シフト日");
+    if (date.slice(0, 7) !== month) throw new Error(`${date}は対象月${month}の日付ではありません。`);
+    if (seenDates.has(date)) throw new Error(`${date}が重複しています。画面を再読み込みしてからもう一度お試しください。`);
+    seenDates.add(date);
+    const type = normalizeShiftType(shift && shift.type);
+    if (!SHIFT_INPUT_TYPES.includes(type)) throw new Error(`${date}の希望区分を選び直してください。`);
+  });
   const requested = payload.shifts.filter((shift) => normalizeShiftType(shift.type) !== "未入力");
   if (!requested.length) throw new Error("勤務可能・休み希望・有給希望・PTのどれかを1日以上入力してください。");
   requested.forEach((shift) => {
@@ -1007,13 +1027,87 @@ function validatePtPayload(payload) {
   if (!(payload.workAreaId || payload.areaId)) throw new Error("エリアを選択してください。");
   if (!(payload.workStoreId || payload.storeId)) throw new Error("店舗を選択してください。");
   if (!payload.date) throw new Error("PT申請日を選択してください。");
-  validateTimeRange_(payload.start, payload.end, PT_MIN_TIME, PT_MAX_TIME, "PT", normalizeDateValue(payload.date));
-  const workDate = new Date(`${normalizeDateValue(payload.date)}T00:00:00`);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  if (workDate < tomorrow) throw new Error("PT申請は前日までに行ってください。");
+  const date = validateDateValue_(payload.date, "PT申請日");
+  validateTimeRange_(payload.start, payload.end, PT_MIN_TIME, PT_MAX_TIME, "PT", date);
+  const today = Utilities.formatDate(new Date(), SHIFT_TIME_ZONE, "yyyy-MM-dd");
+  if (date <= today) throw new Error("PT申請は前日までに行ってください。");
+}
+
+function validateMonthValue_(value) {
+  const month = normalizeMonthValue(value);
+  const match = month.match(/^(\d{4})-(\d{2})$/);
+  if (!match || Number(match[2]) < 1 || Number(match[2]) > 12) {
+    throw new Error("対象月の形式を確認してください。");
+  }
+  return month;
+}
+
+function validateDateValue_(value, label) {
+  const date = normalizeDateValue(value);
+  const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) throw new Error(`${label}の形式を確認してください。`);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    month < 1 || month > 12 || day < 1 ||
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    throw new Error(`${label}に存在する日付を入力してください。`);
+  }
+  return date;
+}
+
+function daysInMonth_(monthValue) {
+  const month = validateMonthValue_(monthValue);
+  const parts = month.split("-").map(Number);
+  return new Date(Date.UTC(parts[0], parts[1], 0)).getUTCDate();
+}
+
+function getShiftSubmissionDeadline_(monthValue) {
+  const month = validateMonthValue_(monthValue);
+  const parts = month.split("-").map(Number);
+  // 対象月の前月15日23:59:59.999（Asia/Tokyo）をUTCへ変換する。
+  return new Date(Date.UTC(parts[0], parts[1] - 2, DEADLINE_DAY, 14, 59, 59, 999));
+}
+
+function getDefaultShiftMonth_(nowValue) {
+  const now = nowValue ? new Date(nowValue) : new Date();
+  if (Number.isNaN(now.getTime())) throw new Error("受付時刻を確認できません。もう一度お試しください。");
+  const current = Utilities.formatDate(now, SHIFT_TIME_ZONE, "yyyy-MM-dd").split("-").map(Number);
+  const offset = current[2] <= DEADLINE_DAY ? 1 : 2;
+  const target = new Date(Date.UTC(current[0], current[1] - 1 + offset, 1));
+  return `${target.getUTCFullYear()}-${String(target.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function assertShiftSubmissionWindow_(monthValue, nowValue) {
+  const month = validateMonthValue_(monthValue);
+  const deadline = getShiftSubmissionDeadline_(month);
+  const now = nowValue ? new Date(nowValue) : new Date();
+  if (Number.isNaN(now.getTime())) throw new Error("受付時刻を確認できません。もう一度お試しください。");
+  if (now.getTime() > deadline.getTime()) {
+    const display = Utilities.formatDate(deadline, SHIFT_TIME_ZONE, "yyyy年M月d日 HH:mm:ss");
+    throw new Error(`${month}分の提出期限（${display}）を過ぎています。管理者へ確認してください。`);
+  }
+}
+
+function assertStaffStoreAccess_(staff, area, store, help) {
+  const primaryStore = normalizeKey(staff && staff.primaryStoreId);
+  if (primaryStore && primaryStore === normalizeKey(store.storeId)) return;
+  const allowed = getStaffStoreSettings().some((setting) => (
+    normalizeKey(setting.employeeId) === normalizeKey(staff && staff.employeeId) &&
+    normalizeKey(setting.areaId) === normalizeKey(area.areaId) &&
+    normalizeKey(setting.storeId) === normalizeKey(store.storeId) &&
+    (help ? setting.helpCandidate : setting.normalDisplay)
+  ));
+  if (!allowed) {
+    throw new Error(help
+      ? "この店舗へのPT申請権限を確認できません。所属設定を管理者へ確認してください。"
+      : "この店舗へのシフト提出権限を確認できません。所属設定を管理者へ確認してください。");
+  }
 }
 
 function validateTimeRange_(startValue, endValue, minTime, maxTime, label, date) {
