@@ -19,6 +19,9 @@ const PASSWORD_HASH_ROUNDS = 1200;
 const REGISTRATION_CODE_LIFETIME_HOURS = 72;
 const REGISTRATION_CODE_MAX_FAILURES = 5;
 const REGISTRATION_CODE_PEPPER_PROPERTY = "SHIFT_REGISTRATION_CODE_PEPPER";
+const DAILY_MAINTENANCE_TRIGGER_UID_PROPERTY = "SHIFT_DAILY_MAINTENANCE_TRIGGER_UID";
+const DAILY_MAINTENANCE_OWNER_EMAIL_PROPERTY = "SHIFT_DAILY_MAINTENANCE_OWNER_EMAIL";
+const TECHNICAL_ERROR_RETENTION_DAYS = 90;
 const SHIFT_TIME_ZONE = "Asia/Tokyo";
 const SHIFT_INPUT_TYPES = ["未入力", "勤務可能", "休み希望", "有給希望", "PT"];
 const ADMIN_EMAILS_PROPERTY = "SHIFT_SYSTEM_ADMIN_EMAILS";
@@ -1099,7 +1102,10 @@ function recordTechnicalErrorSafely_(details, error) {
     errorName,
   };
   console.error("[recordTechnicalErrorSafely_] 処理失敗", safeDetails);
+  let lock = null;
   try {
+    lock = LockService.getScriptLock();
+    lock.waitLock(10000);
     const sheet = getSheetWithHeaders(getSubmissionLogSpreadsheet(), SHEETS.TECHNICAL_ERRORS);
     sheet.appendRow([
       new Date(),
@@ -1117,8 +1123,85 @@ function recordTechnicalErrorSafely_(details, error) {
       trackingId,
       errorName: logError && logError.name ? logError.name : "Error",
     });
+  } finally {
+    try {
+      if (lock && lock.hasLock()) lock.releaseLock();
+    } catch (releaseError) {
+      console.error("[recordTechnicalErrorSafely_] ロック解放失敗", {
+        trackingId,
+        errorName: releaseError && releaseError.name ? releaseError.name : "Error",
+      });
+    }
   }
   return trackingId;
+}
+
+function ensureDailyMaintenanceTrigger_() {
+  const handler = "runDailyMaintenance";
+  const properties = PropertiesService.getScriptProperties();
+  const activeEmail = normalizeEmail_(Session.getActiveUser().getEmail());
+  const ownerEmail = normalizeEmail_(properties.getProperty(DAILY_MAINTENANCE_OWNER_EMAIL_PROPERTY));
+  const storedUid = normalizeKey(properties.getProperty(DAILY_MAINTENANCE_TRIGGER_UID_PROPERTY));
+  if (ownerEmail && activeEmail !== ownerEmail) return storedUid;
+  const triggers = ScriptApp.getProjectTriggers().filter((trigger) => trigger.getHandlerFunction() === handler);
+  const storedTrigger = storedUid && triggers.find((trigger) => normalizeKey(trigger.getUniqueId()) === storedUid);
+  const trigger = storedTrigger || triggers[0] || ScriptApp.newTrigger(handler).timeBased().atHour(3).everyDays(1).create();
+  triggers.filter((duplicate) => duplicate !== trigger).forEach((duplicate) => ScriptApp.deleteTrigger(duplicate));
+  const triggerUid = normalizeKey(trigger.getUniqueId());
+  if (!triggerUid) throw new Error("日次メンテナンストリガーの識別子を取得できませんでした。");
+  properties.setProperty(DAILY_MAINTENANCE_TRIGGER_UID_PROPERTY, triggerUid);
+  properties.setProperty(DAILY_MAINTENANCE_OWNER_EMAIL_PROPERTY, activeEmail);
+  return triggerUid;
+}
+
+function runDailyMaintenance(event) {
+  const expectedUid = normalizeKey(PropertiesService.getScriptProperties().getProperty(DAILY_MAINTENANCE_TRIGGER_UID_PROPERTY));
+  const actualUid = normalizeKey(event && event.triggerUid);
+  if (!expectedUid || !actualUid || !timingSafeEqual_(expectedUid, actualUid)) {
+    throw new Error("日次メンテナンスは登録済みトリガーからだけ実行できます。");
+  }
+  resetRequestCache_();
+  return cleanupTechnicalErrorLogs_();
+}
+
+function cleanupTechnicalErrorLogs() {
+  resetRequestCache_();
+  assertAdminUser_();
+  return cleanupTechnicalErrorLogs_();
+}
+
+function cleanupTechnicalErrorLogs_() {
+  if (!Number.isFinite(TECHNICAL_ERROR_RETENTION_DAYS) || TECHNICAL_ERROR_RETENTION_DAYS < 1) {
+    throw new Error("技術エラーログの保存日数設定が不正です。");
+  }
+  const cutoff = Date.now() - TECHNICAL_ERROR_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = getSheetWithHeaders(getSubmissionLogSpreadsheet(), SHEETS.TECHNICAL_ERRORS);
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { ok: true, deleted: 0, retentionDays: TECHNICAL_ERROR_RETENTION_DAYS };
+    const timestamps = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    const targetRows = [];
+    timestamps.forEach((values, index) => {
+      const occurredAt = toDate_(values[0]);
+      if (occurredAt && occurredAt.getTime() < cutoff) targetRows.push(index + 2);
+    });
+    const groups = [];
+    targetRows.forEach((rowNumber) => {
+      const current = groups[groups.length - 1];
+      if (current && current.start + current.count === rowNumber) current.count += 1;
+      else groups.push({ start: rowNumber, count: 1 });
+    });
+    groups.reverse().forEach((group) => sheet.deleteRows(group.start, group.count));
+    console.log("[cleanupTechnicalErrorLogs_] 期限超過ログを削除", {
+      deleted: targetRows.length,
+      retentionDays: TECHNICAL_ERROR_RETENTION_DAYS,
+    });
+    return { ok: true, deleted: targetRows.length, retentionDays: TECHNICAL_ERROR_RETENTION_DAYS };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function classifyTechnicalError_(errorName, message) {
@@ -1471,6 +1554,7 @@ function setupMasterSheets() {
 
   const migrated = migrateLegacyAuthAccounts_(db, log);
   const summaryCount = syncPasswordSummary_();
+  ensureDailyMaintenanceTrigger_();
 
   console.log("[setupMasterSheets] 4ファイル構成のシート/ヘッダー確認完了", { migrated, summaryCount });
   return true;
@@ -2641,6 +2725,7 @@ function onOpen() {
     .addItem("パスワードサマリ再作成", "rebuildPasswordSummary")
     .addItem("初回登録コードを発行", "issueRegistrationCodeFromMenu")
     .addItem("初回登録コードを失効", "revokeRegistrationCodeFromMenu")
+    .addItem("技術エラーログを整理", "cleanupTechnicalErrorLogs")
     .addItem("最新月の全体/エリアシート再作成", "rebuildLatestMonthView")
     .addItem("このシートを確定反映", "confirmActiveSheet")
     .addToUi();
