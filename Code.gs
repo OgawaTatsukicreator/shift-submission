@@ -18,6 +18,7 @@ const LOGIN_LOCK_MINUTES = 15;
 const PASSWORD_HASH_ROUNDS = 1200;
 const SHIFT_TIME_ZONE = "Asia/Tokyo";
 const SHIFT_INPUT_TYPES = ["未入力", "勤務可能", "休み希望", "有給希望", "PT"];
+const ADMIN_EMAILS_PROPERTY = "SHIFT_SYSTEM_ADMIN_EMAILS";
 
 // 同じGAS実行内だけで読込結果を共有し、次のリクエストには持ち越さない。
 let requestCache_ = {};
@@ -105,9 +106,42 @@ function doPost(e) {
 
 function authorizeOnce() {
   resetRequestCache_();
+  bootstrapAdminAllowlist_();
+  assertAdminUser_();
   const spreadsheet = getMasterSpreadsheet();
   setupMasterSheets();
   return `権限確認が完了しました。${spreadsheet.getName()}`;
+}
+
+function bootstrapAdminAllowlist_() {
+  const properties = PropertiesService.getScriptProperties();
+  if (normalizeKey(properties.getProperty(ADMIN_EMAILS_PROPERTY))) return;
+  const activeEmail = normalizeEmail_(Session.getActiveUser().getEmail());
+  const effectiveEmail = normalizeEmail_(Session.getEffectiveUser().getEmail());
+  if (!activeEmail || activeEmail !== effectiveEmail) {
+    throw new Error("管理者の初期設定は、スクリプト所有者がApps ScriptエディタからauthorizeOnceを実行してください。");
+  }
+  properties.setProperty(ADMIN_EMAILS_PROPERTY, activeEmail);
+  console.log("[bootstrapAdminAllowlist_] 管理者許可リストを初期化", { adminEmail: activeEmail });
+}
+
+function getAdminEmails_() {
+  return normalizeKey(PropertiesService.getScriptProperties().getProperty(ADMIN_EMAILS_PROPERTY))
+    .split(/[\s,;]+/)
+    .map(normalizeEmail_)
+    .filter(Boolean);
+}
+
+function assertAdminUser_() {
+  const activeEmail = normalizeEmail_(Session.getActiveUser().getEmail());
+  if (!activeEmail || !getAdminEmails_().includes(activeEmail)) {
+    throw new Error("この管理操作を実行する権限がありません。管理者アカウントで実行してください。");
+  }
+  return activeEmail;
+}
+
+function normalizeEmail_(value) {
+  return normalizeKey(value).toLowerCase();
 }
 
 /** ログイン済みユーザー向けの初期データを返す。 */
@@ -416,6 +450,7 @@ function migrateLegacyAuthAccounts_(legacySpreadsheet, authSpreadsheet) {
 /** 管理者用ファイルのパスワードサマリを認証アカウントから再作成する。 */
 function rebuildPasswordSummary() {
   resetRequestCache_();
+  assertAdminUser_();
   ensureAuthSheets_();
   const count = syncPasswordSummary_();
   return `${count}件の従業員パスワードサマリを再作成しました。`;
@@ -786,6 +821,7 @@ function getMyShiftHopes(query) {
 
 function confirmActiveSheet() {
   resetRequestCache_();
+  assertAdminUser_();
   const activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const activeSheet = activeSpreadsheet.getActiveSheet();
   const month = detectMonthFromSheetName(activeSheet.getName()) || detectMonthFromMatrix(activeSheet) || normalizeMonthValue(new Date());
@@ -795,31 +831,33 @@ function confirmActiveSheet() {
     sourceSheetName: activeSheet.getName(),
     month,
     areaId: targetAreaId,
-    confirmerId: Session.getActiveUser().getEmail() || "spreadsheet-user",
   });
 }
 
 function confirmMatrixSheet(options) {
   resetRequestCache_();
+  const adminEmail = assertAdminUser_();
+  options = options || {};
   const master = getMasterSpreadsheet();
   const sourceSpreadsheetId = options.sourceSpreadsheetId || getManagedSpreadsheetId_("エリア確認", AREA_SPREADSHEET_ID, options.areaId);
   const sourceSpreadsheet = SpreadsheetApp.openById(sourceSpreadsheetId);
   const sheet = sourceSpreadsheet.getSheetByName(options.sourceSheetName);
   if (!sheet) throw new Error(`確定対象シートが見つかりません: ${options.sourceSheetName}`);
 
-  const parsed = parseConfirmedCells(sheet, options.month, options.confirmerId);
+  const parsed = parseConfirmedCells(sheet, options.month, adminEmail);
   const filtered = options.areaId
     ? parsed.filter((item) => item.workAreaId === options.areaId)
     : parsed;
 
   filtered.forEach((item) => upsertConfirmedShift(master, item));
-  appendChangeLog(master, "確定シフト", `${sourceSpreadsheetId}:${options.sourceSheetName}`, "", JSON.stringify(filtered), "シート確定ボタン", options.confirmerId);
+  appendChangeLog(master, "確定シフト", `${sourceSpreadsheetId}:${options.sourceSheetName}`, "", JSON.stringify(filtered), "シート確定ボタン", adminEmail);
   rebuildMonthViews(master, options.month, options.areaId ? [options.areaId] : null);
   return `${filtered.length}件の確定シフトを反映しました。`;
 }
 
 function setupMasterSheets() {
   resetRequestCache_();
+  assertAdminUser_();
   console.log("[setupMasterSheets] 4ファイル構成のシート/ヘッダー確認開始");
   const overall = getOverallSpreadsheet();
   const db = getDbSpreadsheet();
@@ -848,6 +886,7 @@ function setupMasterSheets() {
 
 function rebuildLatestMonthView() {
   resetRequestCache_();
+  assertAdminUser_();
   const logSpreadsheet = getSubmissionLogSpreadsheet();
   const submissions = readObjects(getSheetWithHeaders(logSpreadsheet, SHEETS.SUBMISSIONS));
   const months = submissions.map((row) => normalizeMonthValue(row["対象月"])).filter(Boolean);
@@ -1829,6 +1868,7 @@ function getAdminSpreadsheet() {
 
 function setupAdminDatabase() {
   resetRequestCache_();
+  assertAdminUser_();
   const admin = getAdminSpreadsheet();
   const idDb = getAdminSheetWithHeaders_(admin, ADMIN_DB_SHEET_NAME, ADMIN_DB_HEADERS);
   getAdminSheetWithHeaders_(admin, ADMIN_FILE_SHEET_NAME, ADMIN_FILE_HEADERS);
@@ -1837,6 +1877,7 @@ function setupAdminDatabase() {
 }
 
 function applyAdminIdDbChanges() {
+  assertAdminUser_();
   setupMasterSheets();
   const admin = getAdminSpreadsheet();
   const db = getDbSpreadsheet();
@@ -1884,6 +1925,11 @@ function applyAdminIdDbChanges() {
 
 function onEdit(e) {
   if (!e || !e.range) return;
+  try {
+    assertAdminUser_();
+  } catch (error) {
+    return;
+  }
   const sheet = e.range.getSheet();
   if (sheet.getName() !== ADMIN_DB_SHEET_NAME) return;
   if (e.range.getColumn() !== 1 || e.range.getRow() === 1) return;
