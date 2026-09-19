@@ -1265,6 +1265,34 @@
       let passwordChangePending = false;
       let activeDraftMonth = "";
 
+      const publicErrorPatterns = [
+        /^(従業員ID|パスワード|確認用パスワード|現在のパスワード|ログイン|この従業員ID)/,
+        /^入力を\d+回/,
+        /^(対象月|月間シフト|シフト日|送信データ|受付時刻)/,
+        /^(エリアを|店舗を|選択した店舗|この店舗への)/,
+        /^(勤務可能|休み希望|有給希望|PT|現在、シフト)/,
+        /^\d{4}-\d{2}(?:-\d{2})?/,
+      ];
+
+      function getErrorMessage(error) {
+        return String(error && error.message || "").replace(/^Exception:\s*/, "").trim();
+      }
+
+      function toUserErrorMessage(error, fallbackMessage) {
+        const message = getErrorMessage(error);
+        if (message && message.length <= 200 && publicErrorPatterns.some((pattern) => pattern.test(message))) {
+          return message;
+        }
+        return `${fallbackMessage} 画面の入力はそのままです。時間をおいてもう一度お試しください。`;
+      }
+
+      function logClientFailure(scope, error) {
+        console.error(`[${scope}] 処理失敗`, {
+          receivedError: Boolean(error),
+          errorName: error && error.name ? String(error.name).slice(0, 40) : "Error",
+        });
+      }
+
       function setMessage(node, text, type = "") {
         node.textContent = text;
         node.className = `message ${type}`.trim();
@@ -1377,14 +1405,14 @@
             try {
               showAuthenticatedApp(result);
             } catch (error) {
-              console.error("[submitLogin] 応答処理に失敗", error);
-              setAuthMessage(elements.loginMessage, error.message, "error");
+              logClientFailure("submitLogin.response", error);
+              setAuthMessage(elements.loginMessage, toUserErrorMessage(error, "ログイン結果を確認できませんでした。"), "error");
             }
           })
           .withFailureHandler((error) => {
-            console.error("[submitLogin] ログイン失敗", error);
+            logClientFailure("submitLogin", error);
             setButtonBusy(elements.loginButton, false);
-            setAuthMessage(elements.loginMessage, error.message || "ログインできませんでした。入力内容を確認してください。", "error");
+            setAuthMessage(elements.loginMessage, toUserErrorMessage(error, "ログインできませんでした。入力内容を確認してください。"), "error");
           })
           .login({ employeeId, password });
       }
@@ -1422,9 +1450,9 @@
             elements.registerPassword.focus();
           })
           .withFailureHandler((error) => {
-            console.error("[lookupRegistrationEmployee] 確認失敗", error);
+            logClientFailure("lookupRegistrationEmployee", error);
             setButtonBusy(elements.registrationLookupButton, false);
-            setAuthMessage(elements.registerMessage, error.message || "従業員IDを確認できませんでした。", "error");
+            setAuthMessage(elements.registerMessage, toUserErrorMessage(error, "従業員IDを確認できませんでした。"), "error");
           })
           .lookupEmployeeForRegistration({ employeeId });
       }
@@ -1459,14 +1487,14 @@
               resetRegistrationVerification();
               showAuthenticatedApp(result);
             } catch (error) {
-              console.error("[submitRegistration] 応答処理に失敗", error);
-              setAuthMessage(elements.registerMessage, error.message, "error");
+              logClientFailure("submitRegistration.response", error);
+              setAuthMessage(elements.registerMessage, toUserErrorMessage(error, "登録結果を確認できませんでした。"), "error");
             }
           })
           .withFailureHandler((error) => {
-            console.error("[submitRegistration] 登録失敗", error);
+            logClientFailure("submitRegistration", error);
             setButtonBusy(elements.registerButton, false);
-            setAuthMessage(elements.registerMessage, error.message || "パスワードを登録できませんでした。", "error");
+            setAuthMessage(elements.registerMessage, toUserErrorMessage(error, "パスワードを登録できませんでした。"), "error");
           })
           .registerAccount({
             employeeId: state.verifiedEmployee.employeeId,
@@ -1499,13 +1527,13 @@
               showAuthenticatedApp(result);
             } catch (error) {
               sessionStorage.removeItem(authStorageKey);
-              setAuthMessage(elements.loginMessage, error.message, "error");
+              setAuthMessage(elements.loginMessage, toUserErrorMessage(error, "ログイン状態を復元できませんでした。"), "error");
             }
           })
           .withFailureHandler((error) => {
-            console.warn("[restoreAuthenticatedSession] セッション復元失敗", error);
+            logClientFailure("restoreAuthenticatedSession", error);
             sessionStorage.removeItem(authStorageKey);
-            setAuthMessage(elements.loginMessage, error.message || "ログインの有効期限が切れました。もう一度ログインしてください。", "error");
+            setAuthMessage(elements.loginMessage, toUserErrorMessage(error, "ログインの有効期限が切れました。もう一度ログインしてください。"), "error");
             elements.loginEmployeeId.focus();
           })
           .getSessionData(saved.authToken);
@@ -1525,7 +1553,7 @@
             clearAuthenticatedApp();
           })
           .withFailureHandler((error) => {
-            console.warn("[logoutCurrentUser] サーバー側ログアウト失敗", error);
+            logClientFailure("logoutCurrentUser", error);
             elements.logoutButton.disabled = false;
             clearAuthenticatedApp("端末上のログイン情報を消去しました。");
           })
@@ -1603,9 +1631,9 @@
             console.log("[submitPasswordChange] パスワード変更完了", { employeeId: state.session.employeeId });
           })
           .withFailureHandler((error) => {
-            console.error("[submitPasswordChange] パスワード変更失敗", error);
+            logClientFailure("submitPasswordChange", error);
             setPasswordChangeBusy(false);
-            const message = error && error.message ? error.message : "パスワードを変更できませんでした。";
+            const message = toUserErrorMessage(error, "パスワードを変更できませんでした。");
             if (/ログイン|セッション|有効期限/.test(message)) {
               closePasswordDialog();
               clearAuthenticatedApp(message);
@@ -1633,7 +1661,7 @@
       }
 
       function handleAuthenticatedFailure(error, messageNode, fallbackMessage) {
-        const message = error && error.message ? error.message : fallbackMessage;
+        const message = toUserErrorMessage(error, fallbackMessage);
         if (/ログイン|セッション|有効期限/.test(message)) {
           clearAuthenticatedApp(message);
           return;
@@ -1982,7 +2010,7 @@
             if (!localStorage.getItem(destinationKey)) persistDraft(data);
           }
         } catch (error) {
-          console.warn("[migrateLegacyDraft] 旧下書きを読み取れなかったため削除", error);
+          logClientFailure("migrateLegacyDraft", error);
         } finally {
           localStorage.removeItem(legacyKey);
         }
@@ -2018,7 +2046,7 @@
           elements.shiftForm.elements.notes.value = "";
           renderCalendar();
           activeDraftMonth = month;
-          console.warn("[restoreDraft] 保存データが壊れていたため削除", error);
+          logClientFailure("restoreDraft", error);
           return;
         }
         const hasSavedArea = state.areas.some((area) => area.areaId === data.areaId);
@@ -2122,7 +2150,7 @@
             setButtonBusy(submitButton, false);
           })
           .withFailureHandler((error) => {
-            console.error("[executeSubmitShift] 提出失敗", error);
+            logClientFailure("executeSubmitShift", error);
             setButtonBusy(submitButton, false);
             handleAuthenticatedFailure(error, elements.message, "送信に失敗しました。入力内容を確認してください。");
           })
@@ -2177,7 +2205,11 @@
           console.log("[submitPt] GASランナーなし");
           return;
         }
-        console.log("[submitPt] PT申請開始", payload);
+        console.log("[submitPt] PT申請開始", {
+          employeeId: payload.employeeId,
+          workStoreId: payload.workStoreId,
+          date: payload.date,
+        });
         setMessage(elements.ptMessage, "PT申請を送信中です...");
         const submitButton = elements.ptForm.querySelector('[type="submit"]');
         setButtonBusy(submitButton, true, "送信中...");
@@ -2189,7 +2221,7 @@
             showResultDialog("PT申請を受け付けました", `${state.session.name}さんのPT申請を保存しました。希望確認から内容を確認できます。`);
           })
           .withFailureHandler((error) => {
-            console.error("[submitPt] PT申請失敗", error);
+            logClientFailure("submitPt", error);
             setButtonBusy(submitButton, false);
             handleAuthenticatedFailure(error, elements.ptMessage, "PT申請に失敗しました。入力内容を確認してください。");
           })
@@ -2219,7 +2251,7 @@
             renderHopes(result);
           })
           .withFailureHandler((error) => {
-            console.error("[loadHopes] 希望取得失敗", error);
+            logClientFailure("loadHopes", error);
             setButtonBusy(loadButton, false);
             handleAuthenticatedFailure(error, elements.hopeMessage, "読込に失敗しました。もう一度お試しください。");
           })
@@ -2229,8 +2261,8 @@
       function renderHopes(data) {
         // 月間希望と随時提出したPT申請を、日付順に一覧表示する。
         if (!data || data.ok === false) {
-          console.error("[renderHopes] 不正なレスポンス", data);
-          setMessage(elements.hopeMessage, (data && data.error) || "希望データの形式が不正です。", "error");
+          logClientFailure("renderHopes.response", null);
+          setMessage(elements.hopeMessage, toUserErrorMessage({ message: data && data.error }, "希望データの形式が不正です。"), "error");
           elements.hopeList.innerHTML = "";
           return;
         }

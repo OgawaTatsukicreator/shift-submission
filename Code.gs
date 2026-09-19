@@ -90,8 +90,16 @@ function doPost(e) {
     if (payload.kind === "pt") return json(submitPtRequest(payload));
     return json(submitShift(payload));
   } catch (error) {
-    console.error("[doPost] 申請処理に失敗", error);
-    return json({ ok: false, error: error.message });
+    const trackingId = Utilities.getUuid();
+    console.error("[doPost] 申請処理に失敗", {
+      trackingId,
+      errorName: error && error.name ? error.name : "Error",
+    });
+    return json({
+      ok: false,
+      error: `処理中に問題が発生しました。入力内容は保持したまま、もう一度お試しください。お問い合わせ番号: ${trackingId}`,
+      trackingId,
+    });
   }
 } //ユーザーがシフト希望を送った際に作動
 
@@ -406,7 +414,7 @@ function trySyncPasswordSummaryForAccount_(employeeId, passwordHash, active, upd
   } catch (error) {
     console.error("[trySyncPasswordSummaryForAccount_] パスワードサマリ同期失敗", {
       employeeId,
-      message: error.message,
+      errorName: error && error.name ? error.name : "Error",
     });
     return false;
   }
@@ -1328,7 +1336,10 @@ function findStoreSafe(storeIdOrName) {
   try {
     return findStore(storeIdOrName);
   } catch (error) {
-    console.warn("[findStoreSafe] 店舗が見つからないためID表示で継続", { storeIdOrName, error: error.message });
+    console.warn("[findStoreSafe] 店舗が見つからないためID表示で継続", {
+      storeIdOrName,
+      errorName: error && error.name ? error.name : "Error",
+    });
     return null;
   }
 }
