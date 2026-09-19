@@ -41,6 +41,7 @@ const SHEETS = {
   PASSWORD_SUMMARY: "従業員パスワードサマリ",
   OPERATIONS: "操作処理状態",
   REGISTRATION_CODES: "初回登録コード",
+  TECHNICAL_ERRORS: "技術エラーログ",
 }; //スプシ内シート
 
 //
@@ -79,6 +80,7 @@ const HEADERS = {
   [SHEETS.PASSWORD_SUMMARY]: ["従業員ID", "パスワードハッシュ", "更新日時", "有効フラグ", "パスワード版"],
   [SHEETS.OPERATIONS]: ["操作ID", "処理種別", "業務キー", "従業員ID", "ペイロードハッシュ", "状態", "保存状態", "結果JSON", "エラーコード", "作成日時", "更新日時"],
   [SHEETS.REGISTRATION_CODES]: ["従業員ID", "コードハッシュ", "発行日時", "有効期限", "状態", "失敗回数", "使用日時", "使用操作ID", "発行者ID"],
+  [SHEETS.TECHNICAL_ERRORS]: ["発生日時", "追跡ID", "操作ID", "処理名", "処理段階", "エラーコード", "再試行可否", "所要時間ミリ秒", "内部要約"],
 }; //ヘッダー定義
 
 function doGet() {
@@ -91,17 +93,21 @@ function doGet() {
 
 function doPost(e) {
   //submitShift(payload):1か月分のシフト希望を出したときに実行される。
+  const startedAt = Date.now();
   try {
     const payload = JSON.parse(e.postData.contents);
     console.log("[doPost] 申請を受信", { kind: payload.kind || "shift" });
     if (payload.kind === "pt") return json(submitPtRequest(payload));
     return json(submitShift(payload));
   } catch (error) {
-    const trackingId = Utilities.getUuid();
-    console.error("[doPost] 申請処理に失敗", {
-      trackingId,
-      errorName: error && error.name ? error.name : "Error",
-    });
+    const trackingId = normalizeKey(error && error.trackingId) || recordTechnicalErrorSafely_({
+      operationId: "",
+      functionName: "doPost",
+      stage: "REQUEST",
+      errorCode: "POST_FAILED",
+      retryable: true,
+      elapsedMs: Date.now() - startedAt,
+    }, error);
     return json({
       ok: false,
       error: `処理中に問題が発生しました。入力内容は保持したまま、もう一度お試しください。お問い合わせ番号: ${trackingId}`,
@@ -906,7 +912,11 @@ function getOperationStatus(query) {
   if (normalizeKey(values[3]) !== auth.staff.employeeId) {
     throw new Error("この操作の状態を確認する権限がありません。");
   }
-  return operationStatusFromValues_(values);
+  const status = operationStatusFromValues_(values);
+  if (status.status === "FAILED_RETRYABLE" || status.status === "FAILED_NEEDS_REPAIR") {
+    status.trackingId = findLatestTechnicalErrorTrackingId_(operationId);
+  }
+  return status;
 }
 
 function validateOperationRequest_(kind, payload, staff) {
@@ -1051,6 +1061,87 @@ function operationStatusFromValues_(values) {
   };
 }
 
+function findLatestTechnicalErrorTrackingId_(operationId) {
+  const id = normalizeKey(operationId);
+  if (!id) return "";
+  try {
+    const sheet = getSubmissionLogSpreadsheet().getSheetByName(SHEETS.TECHNICAL_ERRORS);
+    if (!sheet || sheet.getLastRow() < 1) return "";
+    const currentHeaders = sheet.getRange(1, 1, 1, HEADERS[SHEETS.TECHNICAL_ERRORS].length).getValues()[0].map(normalizeKey);
+    if (currentHeaders.join("\t") !== HEADERS[SHEETS.TECHNICAL_ERRORS].map(normalizeKey).join("\t")) return "";
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return "";
+    const rows = sheet.getRange(2, 2, lastRow - 1, 2).getValues();
+    for (let index = rows.length - 1; index >= 0; index--) {
+      if (normalizeKey(rows[index][1]) === id) return normalizeKey(rows[index][0]);
+    }
+  } catch (error) {
+    console.error("[findLatestTechnicalErrorTrackingId_] 追跡IDの参照に失敗", {
+      operationId: id,
+      errorName: error && error.name ? error.name : "Error",
+    });
+  }
+  return "";
+}
+
+function recordTechnicalErrorSafely_(details, error) {
+  const trackingId = Utilities.getUuid();
+  const errorName = normalizeKey(error && error.name) || "Error";
+  const summary = classifyTechnicalError_(errorName, error && error.message);
+  const safeDetails = {
+    trackingId,
+    operationId: normalizeKey(details && details.operationId),
+    functionName: normalizeKey(details && details.functionName) || "unknown",
+    stage: normalizeKey(details && details.stage) || "unknown",
+    errorCode: normalizeKey(details && details.errorCode) || "UNEXPECTED_ERROR",
+    retryable: Boolean(details && details.retryable),
+    elapsedMs: Math.max(0, Number(details && details.elapsedMs) || 0),
+    errorName,
+  };
+  console.error("[recordTechnicalErrorSafely_] 処理失敗", safeDetails);
+  try {
+    const sheet = getSheetWithHeaders(getSubmissionLogSpreadsheet(), SHEETS.TECHNICAL_ERRORS);
+    sheet.appendRow([
+      new Date(),
+      trackingId,
+      safeDetails.operationId,
+      safeDetails.functionName,
+      safeDetails.stage,
+      safeDetails.errorCode,
+      safeDetails.retryable,
+      safeDetails.elapsedMs,
+      summary,
+    ]);
+  } catch (logError) {
+    console.error("[recordTechnicalErrorSafely_] 技術エラーログ保存失敗", {
+      trackingId,
+      errorName: logError && logError.name ? logError.name : "Error",
+    });
+  }
+  return trackingId;
+}
+
+function classifyTechnicalError_(errorName, message) {
+  const text = normalizeKey(message).toLowerCase();
+  let category = "UNCLASSIFIED";
+  if (/permission|権限|access denied|unauthorized|forbidden/.test(text)) category = "PERMISSION";
+  else if (/列見出し|header|schema/.test(text)) category = "SCHEMA";
+  else if (/quota|limit|上限|制限/.test(text)) category = "QUOTA";
+  else if (/timeout|timed out|時間切れ/.test(text)) category = "TIMEOUT";
+  else if (/not found|見つかりません|存在しません/.test(text)) category = "NOT_FOUND";
+  else if (/json|parse|解析/.test(text)) category = "DATA_FORMAT";
+  return `${errorName}:${category}`.slice(0, 120);
+}
+
+function trackedProcessingError_(trackingId, saveState) {
+  const saved = saveState === "部分保存"
+    ? "一部が保存されている可能性があります。"
+    : "保存は完了していません。";
+  const error = new Error(`処理中に問題が発生しました。${saved} 入力内容は保持されています。追跡ID: ${trackingId}`);
+  error.trackingId = trackingId;
+  return error;
+}
+
 function submitShift(payload) {
   resetRequestCache_();
   if (!ACCEPTING) throw new Error("現在、シフト提出の受付は停止中です。");
@@ -1066,7 +1157,9 @@ function submitShift(payload) {
   const claim = claimOperation_(operationId, "SHIFT_SUBMIT", payload, staff);
   if (claim.completed) return { ...claim.result, replayed: true };
 
+  const startedAt = Date.now();
   let saveState = "未保存";
+  let stage = "SAVE_SUBMISSION";
   try {
     const logSpreadsheet = getSubmissionLogSpreadsheet();
     const overallSpreadsheet = getOverallSpreadsheet();
@@ -1099,15 +1192,25 @@ function submitShift(payload) {
     writeRow(sheet, row, values);
     SpreadsheetApp.flush();
     saveState = "部分保存";
+    stage = "REBUILD_VIEWS";
     rebuildMonthViews(overallSpreadsheet, month, [area.areaId, previousAreaId]);
     SpreadsheetApp.flush();
 
     const result = { ok: true, updated: Boolean(row), month, hopeId, operationId };
+    stage = "FINALIZE_OPERATION";
     finishOperation_(operationId, result);
     return result;
   } catch (error) {
+    const trackingId = recordTechnicalErrorSafely_({
+      operationId,
+      functionName: "submitShift",
+      stage,
+      errorCode: "SHIFT_SUBMIT_FAILED",
+      retryable: true,
+      elapsedMs: Date.now() - startedAt,
+    }, error);
     recordOperationFailureSafely_(operationId, saveState, "SHIFT_SUBMIT_FAILED");
-    throw error;
+    throw trackedProcessingError_(trackingId, saveState);
   }
 }
 
@@ -1125,7 +1228,9 @@ function submitPtRequest(payload) {
   const claim = claimOperation_(operationId, "PT_SUBMIT", payload, staff);
   if (claim.completed) return { ...claim.result, replayed: true };
 
+  const startedAt = Date.now();
   let saveState = "未保存";
+  let stage = "SAVE_PT_REQUEST";
   try {
     const logSpreadsheet = getSubmissionLogSpreadsheet();
     const overallSpreadsheet = getOverallSpreadsheet();
@@ -1152,6 +1257,7 @@ function submitPtRequest(payload) {
       normalizeKey(payload.notes),
     ]);
     saveState = "部分保存";
+    stage = "SAVE_CONFIRMED_SHIFT";
 
     const confirmed = {
       month: workDate.slice(0, 7),
@@ -1169,15 +1275,26 @@ function submitPtRequest(payload) {
       confirmerId: staff.employeeId,
     };
     upsertConfirmedShift(overallSpreadsheet, confirmed);
+    stage = "APPEND_CHANGE_LOG";
     appendChangeLog(overallSpreadsheet, "PT申請", requestId, "", JSON.stringify(confirmed), "PT自動確定", staff.employeeId, `LOG-${operationId}-PT`);
+    stage = "REBUILD_VIEWS";
     rebuildMonthViews(overallSpreadsheet, confirmed.month, [workArea.areaId]);
 
     const result = { ok: true, status, requestId, confirmed, operationId };
+    stage = "FINALIZE_OPERATION";
     finishOperation_(operationId, result);
     return result;
   } catch (error) {
+    const trackingId = recordTechnicalErrorSafely_({
+      operationId,
+      functionName: "submitPtRequest",
+      stage,
+      errorCode: "PT_SUBMIT_FAILED",
+      retryable: true,
+      elapsedMs: Date.now() - startedAt,
+    }, error);
     recordOperationFailureSafely_(operationId, saveState, "PT_SUBMIT_FAILED");
-    throw error;
+    throw trackedProcessingError_(trackingId, saveState);
   }
 }
 
@@ -1348,7 +1465,7 @@ function setupMasterSheets() {
     SHEETS.FILES,
     SHEETS.PASSWORD_SUMMARY,
   ].forEach((sheetName) => getSheetWithHeaders(db, sheetName));
-  [SHEETS.SUBMISSIONS, SHEETS.PT_REQUESTS, SHEETS.LOGIN_ACCOUNTS, SHEETS.AUTH_SESSIONS, SHEETS.OPERATIONS, SHEETS.REGISTRATION_CODES]
+  [SHEETS.SUBMISSIONS, SHEETS.PT_REQUESTS, SHEETS.LOGIN_ACCOUNTS, SHEETS.AUTH_SESSIONS, SHEETS.OPERATIONS, SHEETS.REGISTRATION_CODES, SHEETS.TECHNICAL_ERRORS]
     .forEach((sheetName) => getSheetWithHeaders(log, sheetName));
   getSheetWithHeaders(area, SHEETS.FILES);
 
