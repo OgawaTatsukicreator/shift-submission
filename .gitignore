@@ -1,0 +1,4 @@
+# 個人のエディタ設定とOSが生成するファイル
+.vscode/
+.DS_Store
+Thumbs.db
