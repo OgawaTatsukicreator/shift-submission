@@ -942,15 +942,11 @@
 
           <section class="auth-pane" id="registerPane" role="tabpanel" aria-labelledby="registerTab">
             <h2>初回登録</h2>
-            <p>管理者から受け取った従業員IDと初回登録コードを確認します。</p>
+            <p>従業員IDを確認して、ログイン用のパスワードを設定します。</p>
             <form class="auth-form" id="registrationLookupForm" autocomplete="off">
               <label>
                 従業員ID
                 <input name="employeeId" id="registerEmployeeId" type="text" autocapitalize="none" spellcheck="false" required>
-              </label>
-              <label>
-                初回登録コード
-                <input name="registrationCode" id="registrationCode" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="9" placeholder="ABCD-EFGH" required>
               </label>
               <button type="submit" class="button primary" id="registrationLookupButton">本人情報を確認</button>
             </form>
@@ -1229,7 +1225,6 @@
         registrationLookupForm: document.querySelector("#registrationLookupForm"),
         registerEmployeeId: document.querySelector("#registerEmployeeId"),
         registrationLookupButton: document.querySelector("#registrationLookupButton"),
-        registrationCode: document.querySelector("#registrationCode"),
         registrationForm: document.querySelector("#registrationForm"),
         verifiedEmployeeId: document.querySelector("#verifiedEmployeeId"),
         verifiedEmployeeName: document.querySelector("#verifiedEmployeeName"),
@@ -1292,7 +1287,6 @@
 
       const publicErrorPatterns = [
         /^(従業員ID|パスワード|確認用パスワード|現在のパスワード|ログイン|この従業員ID)/,
-        /^登録コード/,
         /^入力を\d+回/,
         /^(対象月|月間シフト|シフト日|送信データ|受付時刻)/,
         /^保存済みシフト希望/,
@@ -1645,14 +1639,8 @@
         }
 
         const employeeId = elements.registerEmployeeId.value.trim();
-        const registrationCode = elements.registrationCode.value.trim();
         if (!employeeId) {
           setAuthMessage(elements.registerMessage, "従業員IDを入力してください。", "error");
-          return;
-        }
-        if (!registrationCode) {
-          setAuthMessage(elements.registerMessage, "初回登録コードを入力してください。", "error");
-          elements.registrationCode.focus();
           return;
         }
 
@@ -1680,7 +1668,7 @@
             setButtonBusy(elements.registrationLookupButton, false);
             setAuthMessage(elements.registerMessage, toUserErrorMessage(error, "従業員IDを確認できませんでした。"), "error");
           })
-          .lookupEmployeeForRegistration({ employeeId, registrationCode });
+          .lookupEmployeeForRegistration({ employeeId });
       }
 
       function submitRegistration(event) {
@@ -1724,7 +1712,6 @@
           })
           .registerAccount({
             employeeId: state.verifiedEmployee.employeeId,
-            registrationCode: elements.registrationCode.value.trim(),
             password,
             passwordConfirm,
           });
