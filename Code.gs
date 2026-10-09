@@ -688,6 +688,7 @@ function toIsoString_(value) {
 }
 
 function validateStoreArea_(store, area) {
+  // 勤務先は全有効店舗から選べるため、選択したエリアとの対応を確認する。
   if (normalizeKey(store.areaId) !== normalizeKey(area.areaId)) {
     throw new Error("選択した店舗は、このエリアに所属していません。エリアと店舗を選び直してください。");
   }
@@ -747,17 +748,15 @@ function validateOperationRequest_(kind, payload, staff) {
   if (kind === "SHIFT_SUBMIT") {
     validateShiftPayload(payload);
     assertShiftSubmissionWindow_(payload.month);
-    const store = findStore(payload.storeId || staff.primaryStoreId);
-    const area = findArea(payload.areaId || store.areaId);
+    const store = findStore(payload.storeId || staff.primaryStoreId, true);
+    const area = findArea(payload.areaId || store.areaId, true);
     validateStoreArea_(store, area);
-    assertStaffStoreAccess_(staff, area, store, false);
     return;
   }
   validatePtPayload(payload);
-  const store = findStore(payload.workStoreId || payload.storeId || staff.primaryStoreId);
-  const area = findArea(payload.workAreaId || store.areaId);
+  const store = findStore(payload.workStoreId || payload.storeId || staff.primaryStoreId, true);
+  const area = findArea(payload.workAreaId || payload.areaId || store.areaId, true);
   validateStoreArea_(store, area);
-  assertStaffStoreAccess_(staff, area, store, true);
 }
 
 function buildOperationDescriptor_(kind, payload, staff) {
@@ -1053,10 +1052,9 @@ function submitShift(payload) {
   validateShiftPayload(payload);
   assertShiftSubmissionWindow_(payload.month);
   const staff = auth.staff;
-  const store = findStore(payload.storeId || staff.primaryStoreId);
-  const area = findArea(payload.areaId || store.areaId);
+  const store = findStore(payload.storeId || staff.primaryStoreId, true);
+  const area = findArea(payload.areaId || store.areaId, true);
   validateStoreArea_(store, area);
-  assertStaffStoreAccess_(staff, area, store, false);
   const operationId = normalizeKey(payload.operationId);
   const claim = claimOperation_(operationId, "SHIFT_SUBMIT", payload, staff);
   if (claim.completed) return { ...claim.result, replayed: true };
@@ -1124,10 +1122,9 @@ function submitPtRequest(payload) {
   validatePtPayload(payload);
 
   const staff = auth.staff;
-  const workStore = findStore(payload.workStoreId || payload.storeId || staff.primaryStoreId);
-  const workArea = findArea(payload.workAreaId || workStore.areaId);
+  const workStore = findStore(payload.workStoreId || payload.storeId || staff.primaryStoreId, true);
+  const workArea = findArea(payload.workAreaId || payload.areaId || workStore.areaId, true);
   validateStoreArea_(workStore, workArea);
-  assertStaffStoreAccess_(staff, workArea, workStore, true);
   const operationId = normalizeKey(payload.operationId);
   const claim = claimOperation_(operationId, "PT_SUBMIT", payload, staff);
   if (claim.completed) return { ...claim.result, replayed: true };
@@ -1182,7 +1179,7 @@ function submitPtRequest(payload) {
     stage = "APPEND_CHANGE_LOG";
     appendChangeLog(overallSpreadsheet, "PT申請", requestId, "", JSON.stringify(confirmed), "PT自動確定", staff.employeeId, `LOG-${operationId}-PT`);
     stage = "REBUILD_VIEWS";
-    rebuildMonthViews(overallSpreadsheet, confirmed.month, [workArea.areaId]);
+    rebuildMonthViews(overallSpreadsheet, confirmed.month, [workArea.areaId, staff.primaryAreaId]);
 
     const result = { ok: true, status, requestId, confirmed, operationId };
     stage = "FINALIZE_OPERATION";
@@ -1472,7 +1469,7 @@ function buildWeeklyMatrix(records, month, label, areaId) {
   const days = buildMonthDays(year, monthNumber);
   const weeks = splitIntoWeeks(days);
   const stores = getStores().filter((store) => !areaId || store.areaId === areaId);
-  const staffGroups = getMatrixStaffGroups(areaId);
+  const staffGroups = getMatrixStaffGroups(areaId, records);
   const maxDataColumns = Math.max(...weeks.map((week) => getWeekColumnSpan(week, stores)));
   const totalColumns = 2 + maxDataColumns;
   const values = [];
@@ -1524,7 +1521,7 @@ function buildWeeklyMatrix(records, month, label, areaId) {
         row[1] = staff.name;
         dayColumns.forEach((day) => {
           day.stores.forEach((store, storeIndex) => {
-            row[day.startColumn - 1 + storeIndex] = store.closed ? "" : getShiftCell(records, staff.employeeId, staff.name, day.dateValue, store.storeId);
+            row[day.startColumn - 1 + storeIndex] = store.closed ? "" : getShiftCell(records, staff.employeeId, day.dateValue, store.storeId);
           });
         });
         values.push(row);
@@ -1873,23 +1870,6 @@ function assertShiftSubmissionWindow_(monthValue, nowValue) {
   }
 }
 
-function assertStaffStoreAccess_(staff, area, store, help) {
-  const primaryStore = normalizeKey(staff && staff.primaryStoreId);
-  if (primaryStore && primaryStore === normalizeKey(store.storeId)) return;
-  const allowedRelations = new Set(["兼務", "ヘルプ可"]);
-  const allowed = getStaffStoreSettings().some((setting) => (
-    normalizeKey(setting.employeeId) === normalizeKey(staff && staff.employeeId) &&
-    normalizeKey(setting.areaId) === normalizeKey(area.areaId) &&
-    normalizeKey(setting.storeId) === normalizeKey(store.storeId) &&
-    allowedRelations.has(normalizeKey(setting.relation))
-  ));
-  if (!allowed) {
-    throw new Error(help
-      ? "この店舗へのPT申請権限を確認できません。所属設定を管理者へ確認してください。"
-      : "この店舗へのシフト提出権限を確認できません。所属設定を管理者へ確認してください。");
-  }
-}
-
 function validateTimeRange_(startValue, endValue, minTime, maxTime, label, date) {
   const rawStart = normalizeKey(startValue);
   const rawEnd = normalizeKey(endValue);
@@ -1945,9 +1925,9 @@ function countWorking(records, dateValue, storeId) {
   }).length;
 }
 
-function getShiftCell(records, employeeId, name, dateValue, storeId) {
+function getShiftCell(records, employeeId, dateValue, storeId) {
   const record = records.find((item) => (
-    (item.employeeId === employeeId || item.name === name) &&
+    item.employeeId === employeeId &&
     item.storeId === storeId
   ));
   if (!record) return "";
@@ -1990,8 +1970,14 @@ function getConfirmTypeFromColor(color) {
   return "";
 }
 
-function getMatrixStaffGroups(areaId) {
-  const staff = getStaff().filter((member) => !areaId || member.primaryAreaId === areaId || canHelpInArea(member.employeeId, areaId));
+function getMatrixStaffGroups(areaId, records = []) {
+  // 所属設定がなくても、対象エリアへ提出・確定された従業員の行を表示する。
+  const workingEmployeeIds = new Set(records
+    .filter((record) => record.storeAreaId === areaId)
+    .map((record) => record.employeeId));
+  const staff = getStaff().filter((member) => (
+    !areaId || member.primaryAreaId === areaId || workingEmployeeIds.has(member.employeeId) || canHelpInArea(member.employeeId, areaId)
+  ));
   const roles = [];
   staff.forEach((member) => {
     const role = normalizeKey(member.role) || "未設定";
@@ -2146,12 +2132,13 @@ function findStaff(employeeId, name) {
   return staff;
 }
 
-function findStore(storeIdOrName) {
+function findStore(storeIdOrName, idOnly = false) {
   const key = normalizeKey(storeIdOrName);
+  if (!key) throw new Error("店舗を選択してください。");
+  // 提出されたIDは、店舗名や短縮名と一致しても別店舗へ読み替えない。
   const store = getStores().find((item) => (
     item.storeId === key ||
-    item.storeName === key ||
-    item.shortName === key
+    (!idOnly && (item.storeName === key || item.shortName === key))
   ));
   if (!store) throw new Error(`店舗が見つかりません: ${storeIdOrName}`);
   return store;
@@ -2169,9 +2156,10 @@ function findStoreSafe(storeIdOrName) {
   }
 }
 
-function findArea(areaIdOrName) {
+function findArea(areaIdOrName, idOnly = false) {
   const key = normalizeKey(areaIdOrName);
-  const area = getAreas().find((item) => item.areaId === key || item.areaName === key);
+  if (!key) throw new Error("エリアを選択してください。");
+  const area = getAreas().find((item) => item.areaId === key || (!idOnly && item.areaName === key));
   if (!area) throw new Error(`エリアが見つかりません: ${areaIdOrName}`);
   return area;
 }

@@ -2035,15 +2035,9 @@
         });
       }
 
-      function storesByArea(areaId, help = false) {
-        if (!state.session) return state.stores.filter((store) => store.areaId === areaId);
-        const allowedStoreIds = new Set(
-          state.staffStoreSettings
-            .filter((setting) => setting.employeeId === state.session.employeeId && (help ? setting.helpCandidate : setting.normalDisplay))
-            .map((setting) => setting.storeId)
-        );
-        if (state.session.primaryStoreId) allowedStoreIds.add(state.session.primaryStoreId);
-        return state.stores.filter((store) => store.areaId === areaId && allowedStoreIds.has(store.storeId));
+      function storesByArea(areaId) {
+        // 勤務先は、選択したエリアの全有効店舗から選択する。
+        return state.stores.filter((store) => store.areaId === areaId);
       }
 
       function employeesByStore(storeId, help = false) {
@@ -2056,11 +2050,13 @@
       function syncStoreOptions(areaSelect, storeSelect, employeeSelect, help = false) {
         // エリア選択に応じて店舗候補を更新し、続けて名前候補も更新する。
         console.log("[syncStoreOptions] 店舗候補更新", { areaId: areaSelect.value, help });
-        const stores = storesByArea(areaSelect.value, help);
+        const previousStoreId = storeSelect.value;
+        const stores = storesByArea(areaSelect.value);
         fillSelect(storeSelect, stores, "店舗を選択", "storeId", "storeName");
-        if (stores.length) {
-          storeSelect.value = stores[0].storeId;
-        }
+        // 同じエリアの選択を保ち、所属エリアへ戻ったときは主所属店舗を優先する。
+        const preferredStoreIds = [previousStoreId, state.session && state.session.primaryStoreId];
+        const preferredStoreId = preferredStoreIds.find((id) => stores.some((store) => store.storeId === id));
+        storeSelect.value = preferredStoreId || (stores[0] ? stores[0].storeId : "");
         syncEmployeeOptions(storeSelect, employeeSelect, help);
       }
 
@@ -2087,7 +2083,7 @@
           : (state.areas[0] ? state.areas[0].areaId : "");
         areaSelect.value = defaultAreaId;
         syncStoreOptions(areaSelect, storeSelect, employeeSelect, help);
-        if (storesByArea(defaultAreaId, help).some((store) => store.storeId === storeId)) {
+        if (storesByArea(defaultAreaId).some((store) => store.storeId === storeId)) {
           storeSelect.value = storeId;
         }
         syncEmployeeOptions(storeSelect, employeeSelect, help);
