@@ -448,33 +448,12 @@
         text-align: center;
       }
 
-      .week-nav {
-        display: grid;
-        grid-template-columns: minmax(96px, auto) 1fr minmax(96px, auto);
-        gap: 10px;
-        align-items: center;
-      }
-
-      .week-summary {
-        min-width: 0;
-        display: grid;
-        gap: 2px;
-        text-align: center;
-      }
-
-      .week-summary strong,
-      .week-summary span {
-        overflow-wrap: anywhere;
-      }
-
-      .week-summary span {
-        color: var(--muted);
+      .month-progress {
+        display: block;
+        margin-top: 3px;
+        color: var(--primary-dark);
         font-size: 13px;
         font-weight: 800;
-      }
-
-      .week-progress {
-        color: var(--primary-dark);
       }
 
       .month-title strong,
@@ -877,18 +856,6 @@
           grid-template-columns: 1fr;
         }
 
-        .week-nav {
-          grid-template-columns: 56px minmax(0, 1fr) 56px;
-          gap: 6px;
-          padding: 10px 8px;
-        }
-
-        .week-nav .button {
-          min-width: 0;
-          padding: 6px;
-          font-size: 13px;
-        }
-
         .day {
           min-height: 0;
           grid-template-columns: 64px minmax(0, 1fr);
@@ -1066,18 +1033,9 @@
             <div class="month-title">
               <strong id="monthTitle"></strong>
               <small id="monthRange"></small>
+              <span class="month-progress" id="monthProgress" aria-live="polite"></span>
             </div>
             <button type="button" class="button" id="nextMonth">翌月</button>
-          </section>
-
-          <section class="panel week-nav" aria-label="表示する週">
-            <button type="button" class="button" id="prevWeek">前週</button>
-            <div class="week-summary" aria-live="polite">
-              <strong id="weekTitle"></strong>
-              <span id="weekRange"></span>
-              <span class="week-progress" id="weekProgress"></span>
-            </div>
-            <button type="button" class="button" id="nextWeek">次週</button>
           </section>
 
           <section class="panel tools">
@@ -1303,11 +1261,7 @@
         dayTemplate: document.querySelector("#dayTemplate"),
         monthTitle: document.querySelector("#monthTitle"),
         monthRange: document.querySelector("#monthRange"),
-        prevWeek: document.querySelector("#prevWeek"),
-        nextWeek: document.querySelector("#nextWeek"),
-        weekTitle: document.querySelector("#weekTitle"),
-        weekRange: document.querySelector("#weekRange"),
-        weekProgress: document.querySelector("#weekProgress"),
+        monthProgress: document.querySelector("#monthProgress"),
         undoBulk: document.querySelector("#undoBulk"),
         message: document.querySelector("#message"),
         hopeMonth: document.querySelector("#hopeMonthInput"),
@@ -1333,8 +1287,6 @@
       let pendingConfirmAction = null;
       let passwordChangePending = false;
       let activeDraftMonth = "";
-      let calendarWeeks = [];
-      let activeWeekIndex = 0;
       let lastBulkSnapshot = null;
       const activeSubmissionOperations = { shift: null, pt: null };
 
@@ -2079,7 +2031,6 @@
 
       function focusShiftTimeIssue(issue) {
         elements.calendar.querySelectorAll(".day.has-error").forEach((card) => card.classList.remove("has-error"));
-        showWeekForDate(issue.date);
         const card = elements.calendar.querySelector(`[data-date="${issue.date}"]`);
         if (!card) return;
         card.classList.add("has-error");
@@ -2166,54 +2117,10 @@
         elements.monthRange.textContent = `通常シフト提出期限: 毎月${DEADLINE_DAY}日`;
       }
 
-      function buildCalendarWeeks(monthValue) {
-        const date = parseMonth(monthValue);
-        const year = date.getFullYear();
-        const month = date.getMonth();
-        const totalDays = daysInMonth(monthValue);
-        const weeks = [];
-        let week = [];
-        for (let day = 1; day <= totalDays; day++) {
-          const current = new Date(year, month, day);
-          week.push(`${monthValue}-${String(day).padStart(2, "0")}`);
-          if (current.getDay() === 0 || day === totalDays) {
-            weeks.push(week);
-            week = [];
-          }
-        }
-        return weeks;
-      }
-
-      function formatWeekDate(dateValue) {
-        const [, month, day] = dateValue.split("-").map(Number);
-        const date = new Date(`${dateValue}T00:00:00`);
-        return `${month}/${day}（${weekdays[date.getDay()]}）`;
-      }
-
-      function showCalendarWeek(index) {
-        if (!calendarWeeks.length) return;
-        activeWeekIndex = Math.max(0, Math.min(index, calendarWeeks.length - 1));
-        const visibleDates = new Set(calendarWeeks[activeWeekIndex]);
-        elements.calendar.querySelectorAll(".day").forEach((card) => {
-          card.classList.toggle("is-hidden", !visibleDates.has(card.dataset.date));
-        });
-        const week = calendarWeeks[activeWeekIndex];
-        elements.weekTitle.textContent = `第${activeWeekIndex + 1}週 / ${calendarWeeks.length}週`;
-        elements.weekRange.textContent = `${formatWeekDate(week[0])}〜${formatWeekDate(week[week.length - 1])}`;
-        elements.prevWeek.disabled = activeWeekIndex === 0;
-        elements.nextWeek.disabled = activeWeekIndex === calendarWeeks.length - 1;
-        updateCalendarProgress();
-      }
-
-      function showWeekForDate(dateValue) {
-        const index = calendarWeeks.findIndex((week) => week.includes(dateValue));
-        if (index >= 0) showCalendarWeek(index);
-      }
-
       function updateCalendarProgress() {
         const cards = [...elements.calendar.querySelectorAll(".day")];
         const completed = cards.filter((card) => card.querySelector('[name="type"]').value !== "未入力").length;
-        elements.weekProgress.textContent = `入力済み ${completed}/${cards.length}日`;
+        elements.monthProgress.textContent = `入力済み ${completed}/${cards.length}日`;
       }
 
       function renderCalendar(existing = {}) {
@@ -2268,9 +2175,7 @@
           elements.calendar.append(card);
         }
         updateMonthHeader();
-        calendarWeeks = buildCalendarWeeks(monthValue);
-        activeWeekIndex = 0;
-        showCalendarWeek(activeWeekIndex);
+        updateCalendarProgress();
         console.log("[renderCalendar] カレンダー描画完了", { days: totalDays });
       }
 
@@ -2486,7 +2391,6 @@
           month: payload.month,
           notes: payload.notes,
           shifts: payload.shifts,
-          weekIndex: activeWeekIndex,
         };
         elements.undoBulk.disabled = false;
       }
@@ -2499,7 +2403,6 @@
         const snapshot = lastBulkSnapshot;
         elements.shiftForm.elements.notes.value = snapshot.notes || "";
         renderCalendar(groupShiftsByDate(snapshot.shifts));
-        showCalendarWeek(snapshot.weekIndex);
         clearBulkUndo();
         saveDraft();
         setMessage(elements.message, "直前の一括操作を元に戻しました。", "success");
@@ -2978,8 +2881,6 @@
       });
       document.querySelector("#prevMonth").addEventListener("click", () => moveMonth(-1));
       document.querySelector("#nextMonth").addEventListener("click", () => moveMonth(1));
-      elements.prevWeek.addEventListener("click", () => showCalendarWeek(activeWeekIndex - 1));
-      elements.nextWeek.addEventListener("click", () => showCalendarWeek(activeWeekIndex + 1));
       document.querySelectorAll("[data-fill]").forEach((button) => button.addEventListener("click", () => fillAll(button.dataset.fill)));
       elements.undoBulk.addEventListener("click", undoBulkOperation);
 
